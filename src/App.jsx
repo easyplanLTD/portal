@@ -179,6 +179,35 @@ const initialLeads = [
 ];
 
 /* ------------------------------------------------------------------ */
+/* Colour tokens — kept as plain hex values (not Tailwind classes) so   */
+/* they render correctly everywhere: in the real Vite/Tailwind build,   */
+/* in any no-build preview, and without depending on tailwind.config.js */
+/* being picked up. Mirrors the C object in FixFlow's own App.jsx.      */
+/* ------------------------------------------------------------------ */
+
+const C = {
+  bg: "#000000",
+  card: "#141414",
+  sidebar: "#000000",
+  primary: "#d4ff3c",
+  primarySoft: "rgba(212,255,60,0.12)",
+  success: "#4ade80",
+  successSoft: "rgba(74,222,128,0.12)",
+  warn: "#fbbf24",
+  warnSoft: "rgba(251,191,36,0.12)",
+  danger: "#f87171",
+  dangerSoft: "rgba(248,113,113,0.12)",
+  purple: "#c084fc",
+  purpleSoft: "rgba(192,132,252,0.12)",
+  orange: "#fb923c",
+  orangeSoft: "rgba(251,146,60,0.15)",
+  text: "#F1F5F9",
+  mid: "#94A3B8",
+  light: "#475569",
+  border: "#262626",
+};
+
+/* ------------------------------------------------------------------ */
 /* Helpers                                                             */
 /* ------------------------------------------------------------------ */
 
@@ -190,9 +219,9 @@ function successRate(engineer) {
 }
 
 function rateColor(rate) {
-  if (rate >= 80) return "text-emerald-600";
-  if (rate >= 60) return "text-amber-600";
-  return "text-rose-600";
+  if (rate >= 80) return C.success;
+  if (rate >= 60) return C.warn;
+  return C.danger;
 }
 
 function fmtMoney(n) {
@@ -211,16 +240,16 @@ function leadsAssignedToday(leads, engineerId) {
 }
 
 const STATUS_STYLES = {
-  unassigned: "bg-amber-100 text-amber-800",
-  assigned: "bg-blue-100 text-blue-800",
-  in_progress: "bg-indigo-100 text-indigo-800",
-  completed: "bg-emerald-100 text-emerald-800",
-  beyond_repair: "bg-rose-100 text-rose-800",
+  unassigned: { bg: C.warnSoft, t: C.warn },
+  assigned: { bg: C.primarySoft, t: C.primary },
+  in_progress: { bg: C.orangeSoft, t: C.orange },
+  completed: { bg: C.successSoft, t: C.success },
+  beyond_repair: { bg: C.dangerSoft, t: C.danger },
 };
 const PRIORITY_STYLES = {
-  normal: "bg-slate-100 text-slate-600",
-  high: "bg-amber-100 text-amber-800",
-  urgent: "bg-rose-100 text-rose-800",
+  normal: { bg: "rgba(255,255,255,0.06)", t: C.mid },
+  high: { bg: C.warnSoft, t: C.warn },
+  urgent: { bg: C.dangerSoft, t: C.danger },
 };
 
 /* ------------------------------------------------------------------ */
@@ -228,20 +257,28 @@ const PRIORITY_STYLES = {
 /* as one family rather than two differently-designed products.        */
 /* ------------------------------------------------------------------ */
 
-function Pill({ className, children }) {
-  return <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${className}`}>{children}</span>;
+function Pill({ bg, color, style, children }) {
+  return (
+    <span
+      className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"
+      style={{ background: bg, color, ...style }}
+    >
+      {children}
+    </span>
+  );
 }
 
 function Field({ label, children }) {
   return (
     <label className="block mb-3">
-      <span className="block text-xs font-medium text-slate-500 mb-1">{label}</span>
+      <span className="block text-xs font-medium mb-1" style={{ color: C.mid }}>{label}</span>
       {children}
     </label>
   );
 }
 
-const inputCls = "w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-teal-500";
+const inputCls = "w-full rounded-lg px-3 py-2 text-sm outline-none";
+const inputStyle = { background: C.sidebar, border: `1px solid ${C.border}`, color: C.text };
 
 /* ------------------------------------------------------------------ */
 /* Login                                                                */
@@ -260,32 +297,38 @@ function LoginScreen({ engineers, onLogin }) {
   }
 
   return (
-    <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
+    <div className="min-h-screen flex items-center justify-center p-4" style={{ background: C.sidebar }}>
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <div className="inline-flex items-center gap-2 text-white">
-            <div className="w-9 h-9 rounded-lg bg-teal-500 flex items-center justify-center font-bold">E</div>
-            <span className="text-2xl font-bold tracking-tight">Easy Repair Portal</span>
+          <div className="inline-flex items-center justify-center">
+            <img src="/logo.png" alt="Easy Repair" className="h-10 w-auto" />
           </div>
-          <p className="text-slate-400 text-sm mt-2">Your jobs, leads, earnings, and profile</p>
+          <p className="text-sm mt-3" style={{ color: C.light }}>Your jobs, leads, earnings, and profile</p>
         </div>
-        <form onSubmit={(e) => { e.preventDefault(); attemptLogin(email, password); }} className="bg-white rounded-xl shadow-xl p-6">
-          <Field label="Email"><input className={inputCls} value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@fixflow.co.uk" /></Field>
-          <Field label="Password"><input className={inputCls} type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" /></Field>
-          {error && <p className="text-rose-600 text-sm mb-3">{error}</p>}
-          <button className="w-full bg-teal-600 hover:bg-teal-700 text-white font-medium rounded-lg py-2.5 transition">Log in</button>
+        <form
+          onSubmit={(e) => { e.preventDefault(); attemptLogin(email, password); }}
+          className="rounded-xl shadow-xl p-6"
+          style={{ background: C.card, border: `1px solid ${C.border}` }}
+        >
+          <Field label="Email"><input className={inputCls} style={inputStyle} value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@fixflow.co.uk" /></Field>
+          <Field label="Password"><input className={inputCls} style={inputStyle} type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" /></Field>
+          {error && <p className="text-sm mb-3" style={{ color: C.danger }}>{error}</p>}
+          <button className="w-full font-bold rounded-lg py-2.5 transition" style={{ background: C.primary, color: C.sidebar }}>Log in</button>
         </form>
-        <div className="mt-5 bg-slate-800 rounded-lg p-4 text-xs text-slate-300">
-          <p className="font-semibold text-slate-200 mb-3">Demo logins — click to log straight in</p>
+        <div className="mt-5 rounded-lg p-4 text-xs" style={{ background: C.sidebar, border: `1px solid ${C.border}`, color: C.mid }}>
+          <p className="font-semibold mb-3 uppercase tracking-wide" style={{ color: C.light }}>Demo logins — click to log straight in</p>
           <div className="space-y-1.5">
             {engineers.map((e) => (
               <button
                 key={e.id}
                 onClick={() => attemptLogin(e.email, e.password)}
-                className="w-full flex items-center justify-between bg-slate-700 hover:bg-slate-600 rounded-md px-3 py-2 transition text-left"
+                className="w-full flex items-center justify-between rounded-md px-3 py-2 transition text-left"
+                style={{ background: C.card }}
+                onMouseOver={(ev) => (ev.currentTarget.style.background = C.border)}
+                onMouseOut={(ev) => (ev.currentTarget.style.background = C.card)}
               >
-                <span className="text-slate-200 font-medium">{e.name}</span>
-                <span className="text-slate-400">{e.email}</span>
+                <span className="font-medium" style={{ color: C.text }}>{e.name}</span>
+                <span style={{ color: C.light }}>{e.email}</span>
               </button>
             ))}
           </div>
@@ -308,28 +351,35 @@ function Sidebar({ currentUser, activeView, setActiveView, onLogout }) {
     { key: "settings", label: "Settings" },
   ];
   return (
-    <div className="w-56 bg-slate-900 text-slate-300 flex flex-col shrink-0 min-h-screen">
-      <div className="px-5 py-5 flex items-center gap-2 border-b border-slate-800">
-        <div className="w-8 h-8 rounded-lg bg-teal-500 flex items-center justify-center font-bold text-white text-sm">E</div>
-        <span className="text-white font-bold tracking-tight">Easy Repair Portal</span>
+    <div className="w-56 flex flex-col shrink-0 min-h-screen" style={{ background: C.sidebar, color: C.mid }}>
+      <div className="px-5 py-5 flex items-center" style={{ borderBottom: `1px solid ${C.border}` }}>
+        <img src="/logo.png" alt="Easy Repair" className="h-6 w-auto" />
       </div>
       <nav className="flex-1 py-4 space-y-1 px-3">
-        {nav.map((n) => (
-          <button
-            key={n.key}
-            onClick={() => setActiveView(n.key)}
-            className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition ${activeView === n.key ? "bg-teal-600 text-white" : "hover:bg-slate-800 text-slate-300"}`}
-          >
-            {n.label}
-          </button>
-        ))}
+        {nav.map((n) => {
+          const active = activeView === n.key;
+          return (
+            <button
+              key={n.key}
+              onClick={() => setActiveView(n.key)}
+              className="w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition"
+              style={{
+                background: active ? C.primarySoft : "transparent",
+                color: active ? C.primary : C.light,
+                borderLeft: `2px solid ${active ? C.primary : "transparent"}`,
+              }}
+            >
+              {n.label}
+            </button>
+          );
+        })}
       </nav>
-      <div className="px-4 py-4 border-t border-slate-800">
-        <p className="text-sm font-medium text-white">{currentUser.name}</p>
-        <p className="text-xs text-slate-400 mb-3">
+      <div className="px-4 py-4" style={{ borderTop: `1px solid ${C.border}` }}>
+        <p className="text-sm font-medium" style={{ color: C.text }}>{currentUser.name}</p>
+        <p className="text-xs mb-3" style={{ color: C.light }}>
           {currentUser.engineerType === "both" ? "Jobs & Leads" : currentUser.engineerType === "jobs" ? "Jobs only" : "Leads only"} engineer
         </p>
-        <button onClick={onLogout} className="text-xs text-slate-400 hover:text-white underline">Log out</button>
+        <button onClick={onLogout} className="text-xs underline" style={{ color: C.light }}>Log out</button>
       </div>
     </div>
   );
@@ -349,45 +399,45 @@ function DashboardView({ currentUser, jobs, leads }) {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold text-slate-800 mb-1">Welcome back, {currentUser.name.split(" ")[0]}</h1>
-      <p className="text-sm text-slate-500 mb-6">Here's where things stand today.</p>
+      <h1 className="text-2xl font-bold mb-1" style={{ color: C.text }}>Welcome back, {currentUser.name.split(" ")[0]}</h1>
+      <p className="text-sm mb-6" style={{ color: C.mid }}>Here's where things stand today.</p>
 
       <div className="grid grid-cols-4 gap-4 mb-8">
-        <div className="bg-white rounded-xl border border-slate-200 p-5">
-          <p className="text-sm text-slate-500">Jobs today</p>
-          <p className="text-3xl font-bold text-slate-800">{todaysJobs.length}</p>
+        <div className="rounded-xl p-5" style={{ background: C.card, borderLeft: `4px solid ${C.primary}` }}>
+          <p className="text-sm" style={{ color: C.mid }}>Jobs today</p>
+          <p className="text-3xl font-bold" style={{ color: C.text }}>{todaysJobs.length}</p>
         </div>
-        <div className="bg-white rounded-xl border border-slate-200 p-5">
-          <p className="text-sm text-slate-500">Leads today</p>
-          <p className="text-3xl font-bold text-violet-600">{leadsToday} / {currentUser.leadPrefs.dailyLeadTarget}</p>
+        <div className="rounded-xl p-5" style={{ background: C.card, borderLeft: `4px solid ${C.purple}` }}>
+          <p className="text-sm" style={{ color: C.mid }}>Leads today</p>
+          <p className="text-3xl font-bold" style={{ color: C.purple }}>{leadsToday} / {currentUser.leadPrefs.dailyLeadTarget}</p>
         </div>
-        <div className="bg-white rounded-xl border border-slate-200 p-5">
-          <p className="text-sm text-slate-500">Success rate</p>
-          <p className={`text-3xl font-bold ${rateColor(rate)}`}>{rate}%</p>
+        <div className="rounded-xl p-5" style={{ background: C.card, borderLeft: `4px solid ${C.border}` }}>
+          <p className="text-sm" style={{ color: C.mid }}>Success rate</p>
+          <p className="text-3xl font-bold" style={{ color: rateColor(rate) }}>{rate}%</p>
         </div>
-        <div className="bg-white rounded-xl border border-slate-200 p-5">
-          <p className="text-sm text-slate-500">Repaired / BER</p>
-          <p className="text-3xl font-bold text-slate-800">{currentUser.stats.completed} / {currentUser.stats.ber}</p>
+        <div className="rounded-xl p-5" style={{ background: C.card, borderLeft: `4px solid ${C.border}` }}>
+          <p className="text-sm" style={{ color: C.mid }}>Repaired / BER</p>
+          <p className="text-3xl font-bold" style={{ color: C.text }}>{currentUser.stats.completed} / {currentUser.stats.ber}</p>
         </div>
       </div>
 
       {pendingTimeOff.length > 0 && (
-        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-6">
-          <p className="font-medium text-amber-800 mb-1">You have {pendingTimeOff.length} time-off request{pendingTimeOff.length !== 1 ? "s" : ""} awaiting approval</p>
-          <p className="text-sm text-amber-700">Check Settings → Holidays & Time Off for details.</p>
+        <div className="rounded-xl p-4 mb-6" style={{ background: C.warnSoft, border: `1px solid rgba(251,191,36,0.3)` }}>
+          <p className="font-medium mb-1" style={{ color: C.warn }}>You have {pendingTimeOff.length} time-off request{pendingTimeOff.length !== 1 ? "s" : ""} awaiting approval</p>
+          <p className="text-sm" style={{ color: C.warn, opacity: 0.85 }}>Check Settings → Holidays & Time Off for details.</p>
         </div>
       )}
 
-      <h2 className="text-lg font-semibold text-slate-800 mb-3">Today's schedule</h2>
-      <div className="bg-white rounded-xl border border-slate-200 divide-y divide-slate-100">
-        {todaysJobs.length === 0 && <p className="p-4 text-sm text-slate-500">Nothing scheduled today.</p>}
-        {todaysJobs.map((j) => (
-          <div key={j.id} className="p-4 flex items-center justify-between">
+      <h2 className="text-lg font-semibold mb-3" style={{ color: C.text }}>Today's schedule</h2>
+      <div className="rounded-xl" style={{ background: C.card, border: `1px solid ${C.border}` }}>
+        {todaysJobs.length === 0 && <p className="p-4 text-sm" style={{ color: C.mid }}>Nothing scheduled today.</p>}
+        {todaysJobs.map((j, i) => (
+          <div key={j.id} className="p-4 flex items-center justify-between" style={{ borderTop: i > 0 ? `1px solid ${C.border}` : "none" }}>
             <div>
-              <p className="font-medium text-slate-800">{j.customerName} — {j.applianceType} ({j.brand})</p>
-              <p className="text-sm text-slate-500">{fmtDateTime(j.scheduledDate)} · {j.address}</p>
+              <p className="font-medium" style={{ color: C.text }}>{j.customerName} — {j.applianceType} ({j.brand})</p>
+              <p className="text-sm" style={{ color: C.mid }}>{fmtDateTime(j.scheduledDate)} · {j.address}</p>
             </div>
-            <Pill className={STATUS_STYLES[j.status]}>{j.status.replace("_", " ")}</Pill>
+            <Pill bg={STATUS_STYLES[j.status].bg} color={STATUS_STYLES[j.status].t}>{j.status.replace("_", " ")}</Pill>
           </div>
         ))}
       </div>
@@ -413,35 +463,39 @@ function BookingsView({ currentUser, jobs, leads, onUpdateJob, onUpdateLeadTarge
 
   return (
     <div>
-      <h1 className="text-2xl font-bold text-slate-800 mb-6">Bookings</h1>
+      <h1 className="text-2xl font-bold mb-6" style={{ color: C.text }}>Bookings</h1>
       <div className="flex gap-2 mb-5">
-        {tabs.map((t) => (
-          <button
-            key={t.key}
-            onClick={() => setTab(t.key)}
-            className={`px-3 py-1.5 rounded-lg text-sm font-medium ${tab === t.key ? "bg-slate-800 text-white" : "bg-slate-100 text-slate-600"}`}
-          >
-            {t.label}
-          </button>
-        ))}
+        {tabs.map((t) => {
+          const active = tab === t.key;
+          return (
+            <button
+              key={t.key}
+              onClick={() => setTab(t.key)}
+              className="px-3 py-1.5 rounded-lg text-sm font-medium"
+              style={{ background: active ? C.primary : C.card, color: active ? C.sidebar : C.mid }}
+            >
+              {t.label}
+            </button>
+          );
+        })}
       </div>
 
       {tab === "jobs" && (
-        <div className="bg-white rounded-xl border border-slate-200 divide-y divide-slate-100">
-          {myJobs.length === 0 && <p className="p-4 text-sm text-slate-500">No jobs assigned.</p>}
-          {myJobs.map((j) => (
-            <div key={j.id} className="p-4">
+        <div className="rounded-xl" style={{ background: C.card, border: `1px solid ${C.border}` }}>
+          {myJobs.length === 0 && <p className="p-4 text-sm" style={{ color: C.mid }}>No jobs assigned.</p>}
+          {myJobs.map((j, i) => (
+            <div key={j.id} className="p-4" style={{ borderTop: i > 0 ? `1px solid ${C.border}` : "none" }}>
               <div className="flex items-start justify-between mb-1">
-                <p className="font-medium text-slate-800">{j.customerName} — {j.applianceType} ({j.brand})</p>
-                <Pill className={STATUS_STYLES[j.status]}>{j.status.replace("_", " ")}</Pill>
+                <p className="font-medium" style={{ color: C.text }}>{j.customerName} — {j.applianceType} ({j.brand})</p>
+                <Pill bg={STATUS_STYLES[j.status].bg} color={STATUS_STYLES[j.status].t}>{j.status.replace("_", " ")}</Pill>
               </div>
-              <p className="text-sm text-slate-500">{j.address} · {j.phone}</p>
-              <p className="text-sm text-slate-500">{j.faultDescription}</p>
-              <p className="text-xs text-slate-400 mt-1">Scheduled: {fmtDateTime(j.scheduledDate)}</p>
+              <p className="text-sm" style={{ color: C.mid }}>{j.address} · {j.phone}</p>
+              <p className="text-sm" style={{ color: C.mid }}>{j.faultDescription}</p>
+              <p className="text-xs mt-1" style={{ color: C.light }}>Scheduled: {fmtDateTime(j.scheduledDate)}</p>
               <div className="flex gap-2 mt-3">
-                <button onClick={() => onUpdateJob({ ...j, status: "in_progress" })} className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-medium">Mark In Progress</button>
-                <button onClick={() => onUpdateJob({ ...j, status: "completed", completedDate: new Date().toISOString() })} className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-medium">Mark Completed</button>
-                <button onClick={() => onUpdateJob({ ...j, status: "beyond_repair" })} className="px-3 py-1.5 rounded-lg bg-rose-600 text-white text-xs font-medium">Beyond Repair</button>
+                <button onClick={() => onUpdateJob({ ...j, status: "in_progress" })} className="px-3 py-1.5 rounded-lg text-xs font-semibold" style={{ background: C.orangeSoft, color: C.orange }}>Mark In Progress</button>
+                <button onClick={() => onUpdateJob({ ...j, status: "completed", completedDate: new Date().toISOString() })} className="px-3 py-1.5 rounded-lg text-xs font-semibold" style={{ background: C.successSoft, color: C.success }}>Mark Completed</button>
+                <button onClick={() => onUpdateJob({ ...j, status: "beyond_repair" })} className="px-3 py-1.5 rounded-lg text-xs font-semibold" style={{ background: C.dangerSoft, color: C.danger }}>Beyond Repair</button>
               </div>
             </div>
           ))}
@@ -450,9 +504,9 @@ function BookingsView({ currentUser, jobs, leads, onUpdateJob, onUpdateLeadTarge
 
       {tab === "leads" && (
         <div>
-          <div className="bg-violet-50 border border-violet-200 rounded-xl p-5 mb-5">
-            <p className="text-sm font-semibold text-slate-700 mb-1">How many leads would you like per day?</p>
-            <p className="text-xs text-slate-500 mb-3">
+          <div className="rounded-xl p-5 mb-5" style={{ background: C.purpleSoft, border: `1px solid rgba(192,132,252,0.3)` }}>
+            <p className="text-sm font-semibold mb-1" style={{ color: C.text }}>How many leads would you like per day?</p>
+            <p className="text-xs mb-3" style={{ color: C.mid }}>
               We'll assign you up to this many leads a day, matched to your area and the appliances you repair, at {fmtMoney(currentUser.leadPrefs.pricePerLead)} each.
             </p>
             <div className="flex items-center gap-4">
@@ -460,29 +514,30 @@ function BookingsView({ currentUser, jobs, leads, onUpdateJob, onUpdateLeadTarge
                 type="range" min={0} max={30} step={1}
                 value={currentUser.leadPrefs.dailyLeadTarget}
                 onChange={(e) => onUpdateLeadTarget(Number(e.target.value))}
-                className="flex-1 accent-violet-600"
+                className="flex-1"
+                style={{ accentColor: C.purple }}
               />
-              <span className="w-24 text-right text-2xl font-bold text-violet-700">{currentUser.leadPrefs.dailyLeadTarget}/day</span>
+              <span className="w-24 text-right text-2xl font-bold" style={{ color: C.purple }}>{currentUser.leadPrefs.dailyLeadTarget}/day</span>
             </div>
           </div>
-          <div className="bg-white rounded-xl border border-slate-200 divide-y divide-slate-100">
-            {myLeads.length === 0 && <p className="p-4 text-sm text-slate-500">No leads assigned yet.</p>}
-            {myLeads.map((l) => (
-              <div key={l.id} className="p-4">
+          <div className="rounded-xl" style={{ background: C.card, border: `1px solid ${C.border}` }}>
+            {myLeads.length === 0 && <p className="p-4 text-sm" style={{ color: C.mid }}>No leads assigned yet.</p>}
+            {myLeads.map((l, i) => (
+              <div key={l.id} className="p-4" style={{ borderTop: i > 0 ? `1px solid ${C.border}` : "none" }}>
                 <div className="flex items-start justify-between mb-2">
-                  <p className="font-medium text-slate-800">{l.customerName}</p>
-                  <Pill className="bg-violet-100 text-violet-800">{l.status}</Pill>
+                  <p className="font-medium" style={{ color: C.text }}>{l.customerName}</p>
+                  <Pill bg={C.purpleSoft} color={C.purple}>{l.status}</Pill>
                 </div>
-                <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm text-slate-700 mb-2">
-                  <p><span className="text-slate-500">Phone:</span> {l.phone}</p>
-                  <p><span className="text-slate-500">Address:</span> {l.address} ({l.postcode})</p>
-                  <p><span className="text-slate-500">Appliance:</span> {l.applianceType}{l.isIntegrated ? " (Integrated)" : ""}</p>
-                  <p><span className="text-slate-500">Brand:</span> {l.brand}</p>
-                  <p><span className="text-slate-500">Age:</span> {l.applianceAge || "Not given"}</p>
-                  <p><span className="text-slate-500">Priority:</span> {l.priority}</p>
+                <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm mb-2" style={{ color: C.text }}>
+                  <p><span style={{ color: C.mid }}>Phone:</span> {l.phone}</p>
+                  <p><span style={{ color: C.mid }}>Address:</span> {l.address} ({l.postcode})</p>
+                  <p><span style={{ color: C.mid }}>Appliance:</span> {l.applianceType}{l.isIntegrated ? " (Integrated)" : ""}</p>
+                  <p><span style={{ color: C.mid }}>Brand:</span> {l.brand}</p>
+                  <p><span style={{ color: C.mid }}>Age:</span> {l.applianceAge || "Not given"}</p>
+                  <p><span style={{ color: C.mid }}>Priority:</span> {l.priority}</p>
                 </div>
-                <p className="text-sm text-slate-600 mb-2">{l.description}</p>
-                <p className="text-xs text-slate-400">Price: {fmtMoney(l.price)}</p>
+                <p className="text-sm mb-2" style={{ color: C.mid }}>{l.description}</p>
+                <p className="text-xs" style={{ color: C.light }}>Price: {fmtMoney(l.price)}</p>
               </div>
             ))}
           </div>
@@ -490,23 +545,23 @@ function BookingsView({ currentUser, jobs, leads, onUpdateJob, onUpdateLeadTarge
       )}
 
       {tab === "schedule" && (
-        <div className="bg-white rounded-xl border border-slate-200 divide-y divide-slate-100">
-          {[...myJobs].filter((j) => j.scheduledDate).sort((a, b) => a.scheduledDate.localeCompare(b.scheduledDate)).map((j) => (
-            <div key={j.id} className="p-4 flex items-center justify-between">
+        <div className="rounded-xl" style={{ background: C.card, border: `1px solid ${C.border}` }}>
+          {[...myJobs].filter((j) => j.scheduledDate).sort((a, b) => a.scheduledDate.localeCompare(b.scheduledDate)).map((j, i) => (
+            <div key={j.id} className="p-4 flex items-center justify-between" style={{ borderTop: i > 0 ? `1px solid ${C.border}` : "none" }}>
               <div>
-                <p className="font-medium text-slate-800">{fmtDateTime(j.scheduledDate)}</p>
-                <p className="text-sm text-slate-500">{j.customerName} — {j.applianceType} · {j.address}</p>
+                <p className="font-medium" style={{ color: C.text }}>{fmtDateTime(j.scheduledDate)}</p>
+                <p className="text-sm" style={{ color: C.mid }}>{j.customerName} — {j.applianceType} · {j.address}</p>
               </div>
-              <Pill className={STATUS_STYLES[j.status]}>{j.status.replace("_", " ")}</Pill>
+              <Pill bg={STATUS_STYLES[j.status].bg} color={STATUS_STYLES[j.status].t}>{j.status.replace("_", " ")}</Pill>
             </div>
           ))}
-          {myJobs.filter((j) => j.scheduledDate).length === 0 && <p className="p-4 text-sm text-slate-500">Nothing on your schedule.</p>}
+          {myJobs.filter((j) => j.scheduledDate).length === 0 && <p className="p-4 text-sm" style={{ color: C.mid }}>Nothing on your schedule.</p>}
         </div>
       )}
 
       {tab === "reviews" && (
-        <div className="bg-slate-50 border border-slate-200 rounded-xl p-6 text-center">
-          <p className="text-sm text-slate-500">Customer reviews aren't collected yet — this tab is ready for when that's wired up.</p>
+        <div className="rounded-xl p-6 text-center" style={{ background: C.card, border: `1px solid ${C.border}` }}>
+          <p className="text-sm" style={{ color: C.mid }}>Customer reviews aren't collected yet — this tab is ready for when that's wired up.</p>
         </div>
       )}
     </div>
@@ -528,35 +583,35 @@ function PaymentsView({ currentUser, jobs, leads }) {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold text-slate-800 mb-6">Payments</h1>
+      <h1 className="text-2xl font-bold mb-6" style={{ color: C.text }}>Payments</h1>
 
       <div className="grid grid-cols-3 gap-4 mb-6">
-        <div className="bg-white rounded-xl border border-slate-200 p-5">
-          <p className="text-sm text-slate-500">Job earnings (completed)</p>
-          <p className="text-2xl font-bold text-slate-800">{fmtMoney(jobEarnings)}</p>
+        <div className="rounded-xl p-5" style={{ background: C.card, borderLeft: `4px solid ${C.primary}` }}>
+          <p className="text-sm" style={{ color: C.mid }}>Job earnings (completed)</p>
+          <p className="text-2xl font-bold" style={{ color: C.text }}>{fmtMoney(jobEarnings)}</p>
         </div>
-        <div className="bg-white rounded-xl border border-slate-200 p-5">
-          <p className="text-sm text-slate-500">Unpaid jobs</p>
-          <p className="text-2xl font-bold text-amber-600">{unpaidJobs.length}</p>
+        <div className="rounded-xl p-5" style={{ background: C.card, borderLeft: `4px solid ${C.warn}` }}>
+          <p className="text-sm" style={{ color: C.mid }}>Unpaid jobs</p>
+          <p className="text-2xl font-bold" style={{ color: C.warn }}>{unpaidJobs.length}</p>
         </div>
-        <div className="bg-white rounded-xl border border-slate-200 p-5">
-          <p className="text-sm text-slate-500">Lead charges tonight</p>
-          <p className="text-2xl font-bold text-violet-600">{fmtMoney(owedTonight)}</p>
+        <div className="rounded-xl p-5" style={{ background: C.card, borderLeft: `4px solid ${C.purple}` }}>
+          <p className="text-sm" style={{ color: C.mid }}>Lead charges tonight</p>
+          <p className="text-2xl font-bold" style={{ color: C.purple }}>{fmtMoney(owedTonight)}</p>
         </div>
       </div>
 
-      <h2 className="text-lg font-semibold text-slate-800 mb-3">Completed jobs</h2>
-      <div className="bg-white rounded-xl border border-slate-200 divide-y divide-slate-100">
-        {completedJobs.length === 0 && <p className="p-4 text-sm text-slate-500">No completed jobs yet.</p>}
-        {completedJobs.map((j) => (
-          <div key={j.id} className="p-4 flex items-center justify-between">
+      <h2 className="text-lg font-semibold mb-3" style={{ color: C.text }}>Completed jobs</h2>
+      <div className="rounded-xl" style={{ background: C.card, border: `1px solid ${C.border}` }}>
+        {completedJobs.length === 0 && <p className="p-4 text-sm" style={{ color: C.mid }}>No completed jobs yet.</p>}
+        {completedJobs.map((j, i) => (
+          <div key={j.id} className="p-4 flex items-center justify-between" style={{ borderTop: i > 0 ? `1px solid ${C.border}` : "none" }}>
             <div>
-              <p className="font-medium text-slate-800">{j.customerName} — {j.applianceType}</p>
-              <p className="text-sm text-slate-500">Completed {fmtDateTime(j.completedDate)}</p>
+              <p className="font-medium" style={{ color: C.text }}>{j.customerName} — {j.applianceType}</p>
+              <p className="text-sm" style={{ color: C.mid }}>Completed {fmtDateTime(j.completedDate)}</p>
             </div>
             <div className="text-right">
-              <p className="font-semibold text-slate-800">{fmtMoney(currentUser.payRate)}</p>
-              <Pill className={j.paid ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}>{j.paid ? "Paid" : "Unpaid"}</Pill>
+              <p className="font-semibold" style={{ color: C.text }}>{fmtMoney(currentUser.payRate)}</p>
+              <Pill bg={j.paid ? C.successSoft : C.warnSoft} color={j.paid ? C.success : C.warn}>{j.paid ? "Paid" : "Unpaid"}</Pill>
             </div>
           </div>
         ))}
@@ -572,16 +627,16 @@ function PaymentsView({ currentUser, jobs, leads }) {
 function SupportView() {
   return (
     <div>
-      <h1 className="text-2xl font-bold text-slate-800 mb-6">Support</h1>
-      <div className="bg-white rounded-xl border border-slate-200 p-6">
-        <p className="text-sm text-slate-600 mb-4">Need help with a job, a payment, or your account? Get in touch with the office directly.</p>
-        <div className="space-y-2 text-sm">
-          <p><span className="text-slate-500">Phone:</span> 0800 123 4567</p>
-          <p><span className="text-slate-500">Email:</span> support@easyrepair.co.uk</p>
-          <p><span className="text-slate-500">Office hours:</span> Mon–Fri, 8am–6pm</p>
+      <h1 className="text-2xl font-bold mb-6" style={{ color: C.text }}>Support</h1>
+      <div className="rounded-xl p-6" style={{ background: C.card, border: `1px solid ${C.border}` }}>
+        <p className="text-sm mb-4" style={{ color: C.mid }}>Need help with a job, a payment, or your account? Get in touch with the office directly.</p>
+        <div className="space-y-2 text-sm" style={{ color: C.text }}>
+          <p><span style={{ color: C.mid }}>Phone:</span> 0800 123 4567</p>
+          <p><span style={{ color: C.mid }}>Email:</span> support@easyrepair.co.uk</p>
+          <p><span style={{ color: C.mid }}>Office hours:</span> Mon–Fri, 8am–6pm</p>
         </div>
       </div>
-      <p className="text-xs text-slate-400 mt-4">A ticketing/chat system can be added here later — this is a placeholder contact page for now.</p>
+      <p className="text-xs mt-4" style={{ color: C.light }}>A ticketing/chat system can be added here later — this is a placeholder contact page for now.</p>
     </div>
   );
 }
@@ -605,57 +660,67 @@ function SettingsView({ currentUser, onAddTimeOff, onRemoveTimeOff }) {
     setStart(""); setEnd(""); setNote("");
   }
 
+  const tabBtn = (key, label) => (
+    <button
+      onClick={() => setTab(key)}
+      className="px-3 py-1.5 rounded-lg text-sm font-medium"
+      style={{ background: tab === key ? C.primary : C.card, color: tab === key ? C.sidebar : C.mid }}
+    >
+      {label}
+    </button>
+  );
+
   return (
     <div>
-      <h1 className="text-2xl font-bold text-slate-800 mb-1">Settings</h1>
-      <p className="text-sm text-slate-500 mb-6">
+      <h1 className="text-2xl font-bold mb-1" style={{ color: C.text }}>Settings</h1>
+      <p className="text-sm mb-6" style={{ color: C.mid }}>
         {canEdit ? "You can manage your own profile here." : "Your admin manages most of this for you right now — you can see it here, but changes go through them."}
       </p>
 
       <div className="flex gap-2 mb-5">
-        <button onClick={() => setTab("timeoff")} className={`px-3 py-1.5 rounded-lg text-sm font-medium ${tab === "timeoff" ? "bg-slate-800 text-white" : "bg-slate-100 text-slate-600"}`}>Holidays & Time Off</button>
-        <button onClick={() => setTab("skills")} className={`px-3 py-1.5 rounded-lg text-sm font-medium ${tab === "skills" ? "bg-slate-800 text-white" : "bg-slate-100 text-slate-600"}`}>Skills</button>
-        <button onClick={() => setTab("coverage")} className={`px-3 py-1.5 rounded-lg text-sm font-medium ${tab === "coverage" ? "bg-slate-800 text-white" : "bg-slate-100 text-slate-600"}`}>Coverage</button>
-        <button onClick={() => setTab("documents")} className={`px-3 py-1.5 rounded-lg text-sm font-medium ${tab === "documents" ? "bg-slate-800 text-white" : "bg-slate-100 text-slate-600"}`}>Documents</button>
+        {tabBtn("timeoff", "Holidays & Time Off")}
+        {tabBtn("skills", "Skills")}
+        {tabBtn("coverage", "Coverage")}
+        {tabBtn("documents", "Documents")}
       </div>
 
       {tab === "timeoff" && (
         <div>
           {canEdit ? (
-            <div className="bg-white rounded-xl border border-slate-200 p-5 mb-6">
-              <p className="text-sm font-semibold text-slate-700 mb-3">Add time off</p>
+            <div className="rounded-xl p-5 mb-6" style={{ background: C.card, border: `1px solid ${C.border}` }}>
+              <p className="text-sm font-semibold mb-3" style={{ color: C.text }}>Add time off</p>
               <div className="grid grid-cols-2 gap-3 mb-3">
-                <Field label="Start date"><input type="date" className={inputCls} value={start} onChange={(e) => setStart(e.target.value)} /></Field>
-                <Field label="End date"><input type="date" className={inputCls} value={end} onChange={(e) => setEnd(e.target.value)} /></Field>
+                <Field label="Start date"><input type="date" className={inputCls} style={inputStyle} value={start} onChange={(e) => setStart(e.target.value)} /></Field>
+                <Field label="End date"><input type="date" className={inputCls} style={inputStyle} value={end} onChange={(e) => setEnd(e.target.value)} /></Field>
               </div>
-              <Field label="Note (optional)"><input className={inputCls} placeholder="e.g. Family holiday" value={note} onChange={(e) => setNote(e.target.value)} /></Field>
-              <button onClick={submit} className="px-4 py-2 rounded-lg bg-teal-600 text-white text-sm font-medium">
+              <Field label="Note (optional)"><input className={inputCls} style={inputStyle} placeholder="e.g. Family holiday" value={note} onChange={(e) => setNote(e.target.value)} /></Field>
+              <button onClick={submit} className="px-4 py-2 rounded-lg text-sm font-bold" style={{ background: C.primary, color: C.sidebar }}>
                 {currentUser.timeOffApprovalRequired ? "Submit for approval" : "Add time off"}
               </button>
-              <p className="text-xs text-slate-500 mt-2">
+              <p className="text-xs mt-2" style={{ color: C.mid }}>
                 {currentUser.timeOffApprovalRequired
                   ? "This needs to be approved by your admin before it's confirmed — you'll still be assignable until then."
                   : "You won't be auto-assigned any jobs or leads that fall within a period you've added here."}
               </p>
             </div>
           ) : (
-            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-6 text-sm text-amber-800">
+            <div className="rounded-xl p-4 mb-6 text-sm" style={{ background: C.warnSoft, border: `1px solid rgba(251,191,36,0.3)`, color: C.warn }}>
               Self-service is off for your account — ask your admin to add or change time off for you.
             </div>
           )}
-          <div className="bg-white rounded-xl border border-slate-200 divide-y divide-slate-100">
-            {upcoming.length === 0 && <p className="p-4 text-sm text-slate-500">No time off scheduled.</p>}
-            {upcoming.map((t) => (
-              <div key={t.id} className="p-4 flex items-center justify-between">
+          <div className="rounded-xl" style={{ background: C.card, border: `1px solid ${C.border}` }}>
+            {upcoming.length === 0 && <p className="p-4 text-sm" style={{ color: C.mid }}>No time off scheduled.</p>}
+            {upcoming.map((t, i) => (
+              <div key={t.id} className="p-4 flex items-center justify-between" style={{ borderTop: i > 0 ? `1px solid ${C.border}` : "none" }}>
                 <div>
-                  <p className="font-medium text-slate-800">
+                  <p className="font-medium" style={{ color: C.text }}>
                     {t.startDate === t.endDate ? t.startDate : `${t.startDate} → ${t.endDate}`}
-                    {t.status === "pending" && <Pill className="bg-amber-100 text-amber-700 ml-2">Pending approval</Pill>}
-                    {t.status === "approved" && <Pill className="bg-emerald-100 text-emerald-700 ml-2">Approved</Pill>}
+                    {t.status === "pending" && <span className="ml-2"><Pill bg={C.warnSoft} color={C.warn}>Pending approval</Pill></span>}
+                    {t.status === "approved" && <span className="ml-2"><Pill bg={C.successSoft} color={C.success}>Approved</Pill></span>}
                   </p>
-                  {t.note && <p className="text-sm text-slate-500">{t.note}</p>}
+                  {t.note && <p className="text-sm" style={{ color: C.mid }}>{t.note}</p>}
                 </div>
-                {canEdit && <button onClick={() => onRemoveTimeOff(t.id)} className="text-xs text-rose-600 font-medium">Remove</button>}
+                {canEdit && <button onClick={() => onRemoveTimeOff(t.id)} className="text-xs font-medium" style={{ color: C.danger }}>Remove</button>}
               </div>
             ))}
           </div>
@@ -663,20 +728,20 @@ function SettingsView({ currentUser, onAddTimeOff, onRemoveTimeOff }) {
       )}
 
       {tab === "skills" && (
-        <div className="bg-white rounded-xl border border-slate-200 p-5">
-          {!canEdit && <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4">View only — ask your admin to change your skills.</p>}
+        <div className="rounded-xl p-5" style={{ background: C.card, border: `1px solid ${C.border}` }}>
+          {!canEdit && <p className="text-xs rounded-lg p-3 mb-4" style={{ color: C.warn, background: C.warnSoft, border: `1px solid rgba(251,191,36,0.3)` }}>View only — ask your admin to change your skills.</p>}
           <div className="space-y-3">
             {APPLIANCE_TYPES.map((type) => {
               const active = currentUser.applianceTypes.includes(type);
               const excludedBrands = currentUser.brandExclusions[type] || [];
               const avoidsIntegrated = (currentUser.integratedExclusions || []).includes(type);
               return (
-                <div key={type} className={`border rounded-lg p-3 ${active ? "border-slate-200" : "border-slate-100 opacity-50"}`}>
-                  <p className="text-sm font-medium text-slate-700">{type} {active ? "✓" : ""}</p>
+                <div key={type} className="border rounded-lg p-3" style={{ borderColor: C.border, opacity: active ? 1 : 0.5 }}>
+                  <p className="text-sm font-medium" style={{ color: C.text }}>{type} {active ? "✓" : ""}</p>
                   {active && (
                     <>
-                      {excludedBrands.length > 0 && <p className="text-xs text-slate-500 mt-1">Won't repair: {excludedBrands.join(", ")}</p>}
-                      {avoidsIntegrated && <p className="text-xs text-slate-500">Won't do integrated/built-in units for this type</p>}
+                      {excludedBrands.length > 0 && <p className="text-xs mt-1" style={{ color: C.mid }}>Won't repair: {excludedBrands.join(", ")}</p>}
+                      {avoidsIntegrated && <p className="text-xs" style={{ color: C.mid }}>Won't do integrated/built-in units for this type</p>}
                     </>
                   )}
                 </div>
@@ -687,26 +752,26 @@ function SettingsView({ currentUser, onAddTimeOff, onRemoveTimeOff }) {
       )}
 
       {tab === "coverage" && (
-        <div className="bg-white rounded-xl border border-slate-200 p-5">
-          {!canEdit && <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4">View only — ask your admin to change your coverage area.</p>}
-          <p className="text-sm font-semibold text-slate-700 mb-2">Postcode areas you cover</p>
+        <div className="rounded-xl p-5" style={{ background: C.card, border: `1px solid ${C.border}` }}>
+          {!canEdit && <p className="text-xs rounded-lg p-3 mb-4" style={{ color: C.warn, background: C.warnSoft, border: `1px solid rgba(251,191,36,0.3)` }}>View only — ask your admin to change your coverage area.</p>}
+          <p className="text-sm font-semibold mb-2" style={{ color: C.text }}>Postcode areas you cover</p>
           <div className="flex flex-wrap gap-1">
-            {currentUser.postcodes.map((p) => <Pill key={p} className="bg-slate-100 text-slate-700">{p}</Pill>)}
+            {currentUser.postcodes.map((p) => <Pill key={p} bg={C.primarySoft} color={C.primary}>{p}</Pill>)}
           </div>
         </div>
       )}
 
       {tab === "documents" && (
-        <div className="bg-white rounded-xl border border-slate-200 p-5">
-          <p className="text-sm text-slate-500 mb-4">
+        <div className="rounded-xl p-5" style={{ background: C.card, border: `1px solid ${C.border}` }}>
+          <p className="text-sm mb-4" style={{ color: C.mid }}>
             Document uploads (insurance, certifications, ID) aren't wired up yet — this needs file storage set up on the
             backend first. This tab is a placeholder for that.
           </p>
           <div className="space-y-2">
             {["Public Liability Insurance", "Gas Safe Certificate", "PAT Testing Certificate", "Photo ID"].map((doc) => (
-              <div key={doc} className="flex items-center justify-between text-sm bg-slate-50 rounded-lg px-3 py-2">
+              <div key={doc} className="flex items-center justify-between text-sm rounded-lg px-3 py-2" style={{ background: C.sidebar, color: C.text }}>
                 <span>{doc}</span>
-                <Pill className="bg-slate-200 text-slate-500">Not uploaded</Pill>
+                <Pill bg={C.border} color={C.mid}>Not uploaded</Pill>
               </div>
             ))}
           </div>
@@ -753,7 +818,7 @@ export default function App() {
   if (!currentUser) return <LoginScreen engineers={engineers} onLogin={setCurrentUser} />;
 
   return (
-    <div className="flex min-h-screen bg-slate-50 font-sans">
+    <div className="flex min-h-screen font-sans" style={{ background: C.bg }}>
       <Sidebar currentUser={currentUser} activeView={activeView} setActiveView={setActiveView} onLogout={() => setCurrentUser(null)} />
       <main className="flex-1 p-8">
         {activeView === "dashboard" && <DashboardView currentUser={currentUser} jobs={jobs} leads={leads} />}
