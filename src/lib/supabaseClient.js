@@ -16,4 +16,12 @@ import { createClient } from "@supabase/supabase-js";
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+// detectSessionInUrl is off on purpose: Supabase's own auto-detection of invite/recovery
+// tokens in the URL hash runs asynchronously and reliably wins the race against any check
+// App.jsx does at render time, so the "set your password" screen never appeared for real
+// invite links -- by the time we looked, supabase-js had already consumed and stripped the
+// hash. We parse and consume it ourselves instead (see AUTH_HASH in App.jsx), synchronously,
+// before anything else gets a chance to touch it.
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: { detectSessionInUrl: false },
+});
