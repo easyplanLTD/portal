@@ -77,6 +77,22 @@ function fmtDateTime(dt) {
   return d.toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
 }
 
+function fmtDateShort(dateStr) {
+  if (!dateStr) return "—";
+  const d = new Date(dateStr);
+  return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+}
+
+// Insurance expiry is a plain `date` column (no time), so compare on date
+// strings directly rather than going through Date() + timezones.
+function insuranceExpiryStatus(dateStr) {
+  if (!dateStr) return null;
+  const days = Math.ceil((new Date(dateStr) - new Date(todayStr())) / 86400000);
+  if (days < 0) return { label: `Expired ${fmtDateShort(dateStr)}`, color: C.danger };
+  if (days <= 30) return { label: `Expires ${fmtDateShort(dateStr)} — renew soon`, color: C.warn };
+  return { label: `Expires ${fmtDateShort(dateStr)}`, color: C.mid };
+}
+
 const STATUS_STYLES = {
   unassigned: { bg: C.warnSoft, t: C.warn },
   assigned: { bg: C.primarySoft, t: C.primary },
@@ -196,6 +212,7 @@ function profileCompletionGaps(engineer) {
   if (!engineer.workingHours || Object.keys(engineer.workingHours).length === 0) gaps.push("Working hours");
   if (!engineer.idDocumentPath) gaps.push("ID document");
   if (!engineer.insuranceDocumentPath) gaps.push("Public Liability Insurance document");
+  else if (!engineer.insuranceExpiryDate) gaps.push("Public Liability Insurance expiry date");
   return gaps;
 }
 
@@ -749,7 +766,10 @@ function SupportView() {
 const DAYS = [["mon", "Monday"], ["tue", "Tuesday"], ["wed", "Wednesday"], ["thu", "Thursday"], ["fri", "Friday"], ["sat", "Saturday"], ["sun", "Sunday"]];
 const DOC_KINDS = [
   { key: "id", label: "Photo ID", pathField: "idDocumentPath", uploadedField: "idDocumentUploadedAt", column: "id_document_path", uploadedColumn: "id_document_uploaded_at" },
-  { key: "insurance", label: "Public Liability Insurance", pathField: "insuranceDocumentPath", uploadedField: "insuranceDocumentUploadedAt", column: "insurance_document_path", uploadedColumn: "insurance_document_uploaded_at" },
+  {
+    key: "insurance", label: "Public Liability Insurance", pathField: "insuranceDocumentPath", uploadedField: "insuranceDocumentUploadedAt", column: "insurance_document_path", uploadedColumn: "insurance_document_uploaded_at",
+    requiresExpiry: true, expiryField: "insuranceExpiryDate", expiryColumn: "insurance_expiry_date",
+  },
 ];
 
 function SettingsView({ currentUser, onAddTimeOff, onRemoveTimeOff, onProfileFieldsChanged }) {
@@ -763,6 +783,12 @@ function SettingsView({ currentUser, onAddTimeOff, onRemoveTimeOff, onProfileFie
   const [hoursSaved, setHoursSaved] = useState(false);
   const [uploading, setUploading] = useState(null);
   const [uploadErr, setUploadErr] = useState("");
+  const [expiryInputs, setExpiryInputs] = useState(() => {
+    const init = {};
+    DOC_KINDS.forEach((k) => { if (k.requiresExpiry) init[k.key] = currentUser[k.expiryField] || ""; });
+    return init;
+  });
+  const [savingExpiry, setSavingExpiry] = useState(null);
 
   function setDay(day, patch) {
     setHours((h) => ({ ...h, [day]: { ...(h[day] || {}), ...patch } }));
@@ -778,18 +804,39 @@ function SettingsView({ currentUser, onAddTimeOff, onRemoveTimeOff, onProfileFie
 
   async function uploadDocument(kind, file) {
     if (!file) return;
+    const expiryDate = kind.requiresExpiry ? expiryInputs[kind.key] : null;
+    if (kind.requiresExpiry && !expiryDate) {
+      setUploadErr(`Enter the ${kind.label} expiry date before uploading the document.`);
+      return;
+    }
     setUploadErr(""); setUploading(kind.key);
     const ext = file.name.split(".").pop() || "pdf";
     const path = `${currentUser.id}/${kind.key}-document.${ext}`;
     const { error: upErr } = await supabase.storage.from("engineer-documents").upload(path, file, { upsert: true });
     if (upErr) { setUploadErr(upErr.message); setUploading(null); return; }
     const nowIso = new Date().toISOString();
+    const patch = { [kind.column]: path, [kind.uploadedColumn]: nowIso };
+    const localPatch = { [kind.pathField]: path, [kind.uploadedField]: nowIso };
+    if (kind.requiresExpiry) { patch[kind.expiryColumn] = expiryDate; localPatch[kind.expiryField] = expiryDate; }
     const { error: dbErr } = await supabase.from("engineers")
-      .update({ [kind.column]: path, [kind.uploadedColumn]: nowIso })
+      .update(patch)
       .eq("profile_id", currentUser.id);
     setUploading(null);
     if (dbErr) { setUploadErr(dbErr.message); return; }
-    onProfileFieldsChanged?.({ [kind.pathField]: path, [kind.uploadedField]: nowIso });
+    onProfileFieldsChanged?.(localPatch);
+  }
+
+  // Lets an engineer correct/update the expiry date on its own (e.g. a typo,
+  // or the insurer emailed a renewed date ahead of the actual certificate)
+  // without forcing a full document re-upload.
+  async function saveExpiryDate(kind) {
+    const value = expiryInputs[kind.key];
+    if (!value) return;
+    setUploadErr(""); setSavingExpiry(kind.key);
+    const { error } = await supabase.from("engineers").update({ [kind.expiryColumn]: value }).eq("profile_id", currentUser.id);
+    setSavingExpiry(null);
+    if (error) { setUploadErr(error.message); return; }
+    onProfileFieldsChanged?.({ [kind.expiryField]: value });
   }
 
   const upcoming = [...(currentUser.timeOff || [])].sort((a, b) => a.startDate.localeCompare(b.startDate));
@@ -936,19 +983,57 @@ function SettingsView({ currentUser, onAddTimeOff, onRemoveTimeOff, onProfileFie
           <div className="space-y-2">
             {DOC_KINDS.map((kind) => {
               const uploadedAt = currentUser[kind.uploadedField];
+              const expiryValue = kind.requiresExpiry ? (expiryInputs[kind.key] || "") : null;
+              const expiryDirty = kind.requiresExpiry && expiryValue && expiryValue !== (currentUser[kind.expiryField] || "");
+              const expiryStatus = kind.requiresExpiry ? insuranceExpiryStatus(currentUser[kind.expiryField]) : null;
+              const canUpload = !kind.requiresExpiry || !!expiryValue;
               return (
-                <div key={kind.key} className="flex items-center justify-between text-sm rounded-lg px-3 py-2" style={{ background: C.sidebar, color: C.text }}>
-                  <div>
-                    <span>{kind.label}</span>
-                    {uploadedAt && <span className="ml-2 text-xs" style={{ color: C.mid }}>Uploaded {fmtDateTime(uploadedAt)}</span>}
+                <div key={kind.key} className="text-sm rounded-lg px-3 py-2" style={{ background: C.sidebar, color: C.text }}>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span>{kind.label}</span>
+                      {uploadedAt && <span className="ml-2 text-xs" style={{ color: C.mid }}>Uploaded {fmtDateTime(uploadedAt)}</span>}
+                      {expiryStatus && <span className="ml-2 text-xs font-medium" style={{ color: expiryStatus.color }}>{expiryStatus.label}</span>}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {uploadedAt ? <Pill bg={C.successSoft} color={C.success}>Uploaded</Pill> : <Pill bg={C.border} color={C.mid}>Not uploaded</Pill>}
+                      <label
+                        className="text-xs font-bold rounded-lg px-3 py-1.5 cursor-pointer"
+                        style={{ background: C.primary, color: C.sidebar, opacity: uploading === kind.key || !canUpload ? 0.5 : 1 }}
+                        onClick={(e) => {
+                          if (!canUpload) {
+                            e.preventDefault();
+                            setUploadErr(`Enter the ${kind.label} expiry date before uploading the document.`);
+                          }
+                        }}
+                      >
+                        {uploading === kind.key ? "Uploading…" : uploadedAt ? "Replace" : "Upload"}
+                        <input type="file" accept="image/*,.pdf" className="hidden" onChange={(e) => uploadDocument(kind, e.target.files?.[0])} />
+                      </label>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    {uploadedAt ? <Pill bg={C.successSoft} color={C.success}>Uploaded</Pill> : <Pill bg={C.border} color={C.mid}>Not uploaded</Pill>}
-                    <label className="text-xs font-bold rounded-lg px-3 py-1.5 cursor-pointer" style={{ background: C.primary, color: C.sidebar, opacity: uploading === kind.key ? 0.7 : 1 }}>
-                      {uploading === kind.key ? "Uploading…" : uploadedAt ? "Replace" : "Upload"}
-                      <input type="file" accept="image/*,.pdf" className="hidden" onChange={(e) => uploadDocument(kind, e.target.files?.[0])} />
-                    </label>
-                  </div>
+                  {kind.requiresExpiry && (
+                    <div className="flex items-center gap-2 mt-2">
+                      <span className="text-xs" style={{ color: C.mid }}>Expiry date{!uploadedAt && " (required to upload)"}:</span>
+                      <input
+                        type="date"
+                        className={inputCls}
+                        style={{ ...inputStyle, width: 150, padding: "4px 8px" }}
+                        value={expiryValue}
+                        onChange={(e) => setExpiryInputs((s) => ({ ...s, [kind.key]: e.target.value }))}
+                      />
+                      {expiryDirty && (
+                        <button
+                          onClick={() => saveExpiryDate(kind)}
+                          disabled={savingExpiry === kind.key}
+                          className="text-xs font-bold rounded-lg px-2.5 py-1"
+                          style={{ background: C.border, color: C.text, opacity: savingExpiry === kind.key ? 0.7 : 1 }}
+                        >
+                          {savingExpiry === kind.key ? "Saving…" : "Save date"}
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
               );
             })}
