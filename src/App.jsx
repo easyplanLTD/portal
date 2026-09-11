@@ -175,7 +175,7 @@ function mapBookingRow(row) {
     postcode: row.postcode || "",
     applianceType: row.appliance,
     brand: row.brand || "",
-    applianceAge: row.appliance_age != null ? `${row.appliance_age} years` : "",
+    applianceAge: row.appliance_age_label || (row.appliance_age != null ? `${row.appliance_age} years` : ""),
     isIntegrated: false, // not tracked in `bookings` yet
     faultDescription: row.issue || "",
     notes: row.notes || "",
