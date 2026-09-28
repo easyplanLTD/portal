@@ -6,3 +6,22 @@ html, body, #root {
   width: 100%;
   overflow-x: hidden;
 }
+
+/* iOS Safari gives native date/time inputs a fixed intrinsic min-width that
+   ignores their container, so side-by-side date + time fields overflowed and
+   overlapped each other on phones. Strip the native sizing so they fill
+   (and stay inside) their grid column. */
+input[type="date"],
+input[type="time"] {
+  -webkit-appearance: none;
+  appearance: none;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+  min-height: 2.375rem;
+}
+input[type="date"]::-webkit-date-and-time-value,
+input[type="time"]::-webkit-date-and-time-value {
+  text-align: left;
+  margin: 0;
+}
