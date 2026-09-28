@@ -412,14 +412,14 @@ function WorkloadWidget({ tabs }) {
 
 function Field({ label, children }) {
   return (
-    <label className="block mb-3">
+    <label className="block mb-3 min-w-0">
       <span className="block text-xs font-medium mb-1" style={{ color: C.mid }}>{label}</span>
       {children}
     </label>
   );
 }
 
-const inputCls = "w-full rounded-lg px-3 py-2 text-sm outline-none";
+const inputCls = "block w-full min-w-0 max-w-full rounded-lg px-3 py-2 text-sm outline-none";
 const inputStyle = { background: C.sidebar, border: `1px solid ${C.border}`, color: C.text };
 
 // Shared look for any popup "box" in the Portal (a modal overlay sitting on
@@ -1028,7 +1028,7 @@ function BookingDetailModal({ job, onClose, onSaveDetails, currentUser }) {
 
         <div className="pt-4" style={{ borderTop: `1px solid ${C.border}` }}>
           <p className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: C.mid }}>Visit details</p>
-          <div className="grid grid-cols-2 gap-3 mb-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-3 mb-3">
             <Field label="Scheduled date">
               <input type="date" className={inputCls} style={modalInputStyle} value={scheduledDate} onChange={(e) => setScheduledDate(e.target.value)} />
             </Field>
@@ -1050,7 +1050,7 @@ function BookingDetailModal({ job, onClose, onSaveDetails, currentUser }) {
         <div className="pt-4 mt-4" style={{ borderTop: `1px solid ${C.border}` }}>
           <p className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: C.mid }}>Schedule Return Visit</p>
           <p className="text-xs mb-3" style={{ color: C.light }}>Couldn't finish the job on the first visit? Arrange a return with the customer and add the date and time here.</p>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-3">
             <Field label="Return date">
               <input type="date" className={inputCls} style={modalInputStyle} min={scheduledDate || undefined} value={returnVisitDate} onChange={(e) => { setReturnVisitDate(e.target.value); if (!e.target.value) setReturnVisitTime(""); }} />
             </Field>
@@ -1603,7 +1603,7 @@ function SettingsView({ currentUser, onAddTimeOff, onRemoveTimeOff, onProfileFie
           {canEdit ? (
             <div className="rounded-xl p-5 mb-6" style={{ background: C.card, border: `1px solid ${C.border}` }}>
               <p className="text-sm font-semibold mb-3" style={{ color: C.text }}>Add time off</p>
-              <div className="grid grid-cols-2 gap-3 mb-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-3 mb-3">
                 <Field label="Start date"><input type="date" className={inputCls} style={inputStyle} value={start} onChange={(e) => setStart(e.target.value)} /></Field>
                 <Field label="End date"><input type="date" className={inputCls} style={inputStyle} value={end} onChange={(e) => setEnd(e.target.value)} /></Field>
               </div>
