@@ -25,3 +25,23 @@ input[type="time"]::-webkit-date-and-time-value {
   text-align: left;
   margin: 0;
 }
+
+/* Dark theme for native date/time controls: makes the calendar/clock icon
+   visible on our black inputs (it was black-on-black on desktop) and gives
+   the popup itself a dark look. Pointer cursor signals the field is
+   clickable to open the picker (see the showPicker listener in App.jsx). */
+input[type="date"],
+input[type="time"],
+input[type="datetime-local"] {
+  color-scheme: dark;
+  cursor: pointer;
+}
+input[type="date"]:disabled,
+input[type="time"]:disabled {
+  cursor: not-allowed;
+}
+input[type="date"]::-webkit-calendar-picker-indicator,
+input[type="time"]::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  opacity: 0.85;
+}
