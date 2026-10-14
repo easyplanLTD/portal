@@ -74,7 +74,7 @@ export function usePortalPaymentData(currentUser) {
       supabase.from("flag_categories").select("*").eq("active", true).order("sort_order"),
       supabase.from("job_flags").select("*").eq("engineer_id", engineerId).order("created_at", { ascending: false }),
       supabase.from("commission_recoveries").select("*").eq("engineer_id", engineerId).order("created_at", { ascending: false }),
-      supabase.from("engineers").select("stripe_account_id,stripe_status,stripe_charges_enabled,stripe_payouts_enabled,stripe_requirements_due").eq("id", engineerId).maybeSingle(),
+      supabase.from("engineers").select("stripe_account_id,stripe_status,stripe_charges_enabled,stripe_payouts_enabled,stripe_requirements_due,profile:profiles(is_test)").eq("id", engineerId).maybeSingle(),
     ]);
     if (!s.error) setSettingsRow(s.data);
     if (!o.error) setOverrides(o.data || []);
@@ -121,7 +121,8 @@ export function PaymentsSetupCard({ data }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const status = stripe?.stripe_status || "not_started";
-  const live = settings.payments_live;
+  // Test engineer accounts can set up Stripe (test mode) before payments go live for everyone.
+  const live = settings.payments_live || !!stripe?.profile?.is_test;
   const active = status === "active";
   const due = Array.isArray(stripe?.stripe_requirements_due) ? stripe.stripe_requirements_due : [];
   const start = async () => {
