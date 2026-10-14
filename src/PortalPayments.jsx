@@ -34,6 +34,29 @@ async function callPayments(action, body) {
 const fmtDT = (d) => (d ? new Date(d).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : "—");
 
 // ─── data ───────────────────────────────────────────────────────────────────
+// Once payments are live, jobs with a card saved at booking (and Pay after
+// repair jobs) are completed first: completing them is what charges the card
+// or sends the customer their payment link. Cash/manual jobs still need
+// "Payment Taken" first.
+export const completesBeforePayment = (job, settings) =>
+  !!settings?.payments_live && !job.isExternal && (job.hasSavedCard || job.paymentTiming === "after");
+
+// Tells the payments Edge Function a job has just been completed. Returns a
+// short message for the engineer, or an error message.
+export async function chargeOnCompletion(job) {
+  try {
+    const res = await callPayments("job_completed", { bookingId: job.id });
+    const r = res?.job;
+    if (r && typeof r === "object" && r.ok === false) return { error: `The customer's card was declined, so they've been sent a payment link instead.` };
+    if (r && typeof r === "object" && r.url) return { message: "The customer has been sent a payment link." };
+    if (r && typeof r === "object" && r.ok) return { message: "The customer's card has been charged." };
+    if (r === "waiting for parts approval") return { message: "The customer will be charged once they approve the parts." };
+    return { message: null };
+  } catch (e) {
+    return { error: `The job is completed, but payment didn't start: ${e.message}. EasyRepair can take it from FixFlow.` };
+  }
+}
+
 export function usePortalPaymentData(currentUser) {
   const engineerId = currentUser?.engineerRowId;
   const [settingsRow, setSettingsRow] = useState(null);

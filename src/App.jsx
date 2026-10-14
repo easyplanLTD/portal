@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { supabase } from "./lib/supabaseClient";
-import { usePortalPaymentData, PaymentsSetupCard, JobEarningsLine, JobPaymentSection, EarningsPanel } from "./PortalPayments";
+import { usePortalPaymentData, PaymentsSetupCard, JobEarningsLine, JobPaymentSection, EarningsPanel, completesBeforePayment, chargeOnCompletion } from "./PortalPayments";
 import { mapPaymentFields } from "./paymentsShared";
 
 /* ------------------------------------------------------------------ */
@@ -1312,7 +1312,8 @@ function BookingsView({ currentUser, jobs, onUpdateJob, onSaveJobDetails, onDecl
                             });
                             return;
                           }
-                          if (!j.paymentTaken) {
+                          const autoPay = completesBeforePayment(j, payData?.settings);
+                          if (!j.paymentTaken && !autoPay) {
                             setNotice({
                               title: "Payment not taken yet",
                               message: "This job can't be marked as completed until payment has been taken. Collect payment from the customer, press \"Payment Taken\", then mark the job as completed.",
@@ -1320,10 +1321,16 @@ function BookingsView({ currentUser, jobs, onUpdateJob, onSaveJobDetails, onDecl
                             return;
                           }
                           const err = await onUpdateJob({ ...j, status: "completed", completedDate: new Date().toISOString() });
-                          if (err) setNotice({ title: "Couldn't mark as completed", message: err });
+                          if (err) { setNotice({ title: "Couldn't mark as completed", message: err }); return; }
+                          if (autoPay) {
+                            const r = await chargeOnCompletion(j);
+                            if (r.error) setNotice({ title: "Payment needs attention", message: r.error });
+                            else if (r.message) setNotice({ title: "Job completed", message: r.message });
+                            onReloadJobs?.();
+                          }
                         }}
                         className="px-3 py-1.5 rounded-lg text-xs font-semibold"
-                        style={{ background: C.successSoft, color: C.success, opacity: j.paymentTaken ? 1 : 0.55 }}
+                        style={{ background: C.successSoft, color: C.success, opacity: j.paymentTaken || completesBeforePayment(j, payData?.settings) ? 1 : 0.55 }}
                       >
                         Mark Completed
                       </button>
