@@ -90,6 +90,14 @@ export function usePortalPaymentData(currentUser) {
   }, [engineerId]);
 
   useEffect(() => { reload(); }, [reload]);
+  // Coming back from Stripe's onboarding pages: check the account straight away.
+  useEffect(() => {
+    if (!engineerId) return;
+    const q = new URLSearchParams(window.location.search);
+    if (!q.get("stripe")) return;
+    window.history.replaceState(null, "", window.location.pathname);
+    callPayments("refresh_account", {}).then(reload).catch(() => {});
+  }, [engineerId, reload]);
   useEffect(() => {
     if (!engineerId) return;
     const ch = supabase.channel(`my-flags-${engineerId}`)
