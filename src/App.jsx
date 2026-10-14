@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { supabase } from "./lib/supabaseClient";
 import { usePortalPaymentData, PaymentsSetupCard, JobEarningsLine, JobPaymentSection, EarningsPanel, completesBeforePayment, chargeOnCompletion } from "./PortalPayments";
-import { mapPaymentFields } from "./paymentsShared";
+import { mapPaymentFields, isStripeJob } from "./paymentsShared";
 
 /* ------------------------------------------------------------------ */
 /* Constants & sample data                                            */
@@ -1373,8 +1373,13 @@ function BookingsView({ currentUser, jobs, onUpdateJob, onSaveJobDetails, onDecl
       {tab === "payments" && (
         <>
           {payData && <EarningsPanel currentUser={currentUser} jobs={jobs} data={payData} onOpenJob={(j) => setSelectedJobId(j.id)} />}
-          <h2 className="text-lg font-semibold mb-3" style={{ color: C.text }}>Pay from EasyRepair</h2>
-          <PaymentsView currentUser={currentUser} jobs={jobs} showTitle={false} />
+          {/* Old per-job pay from EasyRepair -- only for jobs not paid through Stripe. */}
+          {jobs.some((j) => j.engineerId === currentUser.engineerRowId && j.status === "completed" && !isStripeJob(j)) && (
+            <>
+              <h2 className="text-lg font-semibold mb-3" style={{ color: C.text }}>Pay from EasyRepair</h2>
+              <PaymentsView currentUser={currentUser} jobs={jobs.filter((j) => !isStripeJob(j))} showTitle={false} />
+            </>
+          )}
         </>
       )}
 
