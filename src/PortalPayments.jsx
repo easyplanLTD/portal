@@ -22,6 +22,7 @@ import { C, Pill, Field, inputCls, modalInputStyle, modalCardStyle } from "./App
 import {
   mergeSettings, jobMoney, penceToGBP, poundsToPence, pctLabel, paymentRoute, ROUTE_LABELS,
   PAYMENT_STATUS_LABELS, PARTS_STATUS_LABELS, STRIPE_STATUS_LABELS, cancellationFee,
+  mapPaymentFields, calloutPenceFor,
 } from "./paymentsShared";
 
 async function callPayments(action, body) {
@@ -173,6 +174,198 @@ export function PaymentsSetupCard({ data }) {
   );
 }
 
+// ─── Take payment (job card button) ─────────────────────────────────────────
+// The engineer picks the outcome and how the customer pays. The job shows as
+// "Awaiting payment" until the money is in, then completes by itself.
+export const isAwaitingPayment = (job) =>
+  !!job.pendingOutcome && job.paymentStatus === "outstanding" && !["completed", "beyond_repair", "cancelled"].includes(job.status);
+
+export function TakePaymentModal({ job: initialJob, data, onClose, onDone }) {
+  const { settings } = data;
+  const [job, setJob] = useState(initialJob);
+  const [outcome, setOutcome] = useState(initialJob.pendingOutcome || "Completed");
+  const [method, setMethod] = useState(initialJob.hasSavedCard ? "card" : "link");
+  const [partDesc, setPartDesc] = useState("");
+  const [partPrice, setPartPrice] = useState("");
+  const [busy, setBusy] = useState("");
+  const [err, setErr] = useState("");
+  const [note, setNote] = useState("");
+  const [qr, setQr] = useState(null);
+  const [cardFailed, setCardFailed] = useState(false);
+  const [waiting, setWaiting] = useState(isAwaitingPayment(initialJob));
+  const live = !!settings.payments_live || !!initialJob.isTest;
+  const paidStatuses = ["paid", "refunded", "part_refunded"];
+  const done = paidStatuses.includes(job.paymentStatus) || ["completed", "beyond_repair"].includes(job.status);
+
+  // Keep the booking fresh while the screen is open (parts approval, payment).
+  useEffect(() => {
+    let stop = false;
+    const tick = async () => {
+      const { data: row } = await supabase.from("bookings").select("*").eq("id", job.id).maybeSingle();
+      if (stop || !row) return;
+      const STATUS = { Completed: "completed", "Beyond Repair": "beyond_repair", Cancelled: "cancelled", "In Progress": "in_progress" };
+      setJob((j) => ({ ...j, ...mapPaymentFields(row), status: STATUS[row.status] || j.status }));
+    };
+    const id = setInterval(tick, 4000);
+    return () => { stop = true; clearInterval(id); };
+  }, [job.id]);
+  useEffect(() => { if (done) onDone?.(); }, [done]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const ber = outcome === "Beyond Repair";
+  const callout = calloutPenceFor(job, settings);
+  const parts = ber ? 0 : job.partsApprovalStatus === "approved" ? job.partsTotalPence : 0;
+  const adminFee = job.adminFeeAppliedAt ? Number(job.adminFeePence || 0) : 0;
+  const total = callout + parts + adminFee;
+  const partsPending = !ber && job.partsApprovalStatus === "pending";
+  const showCard = job.hasSavedCard && !cardFailed;
+
+  const sendParts = async () => {
+    const pence = poundsToPence(partPrice);
+    if (!partDesc.trim() || pence <= 0) { setErr("Enter what the part is and its price."); return; }
+    setBusy("parts"); setErr("");
+    const lines = [...(job.partsLines || []), { id: `p${Date.now()}`, description: partDesc.trim(), price_pence: pence }];
+    const { error } = await supabase.from("bookings").update({ parts_lines: lines }).eq("id", job.id);
+    if (error) { setBusy(""); setErr(error.message); return; }
+    try { await callPayments("send_parts_approval", { bookingId: job.id }); setNote("Parts sent to the customer to approve. This screen updates as soon as they do."); }
+    catch (e) { setNote(`Parts saved. The approval link couldn't be sent automatically (${e.message}), so EasyRepair will confirm with the customer.`); }
+    setJob((j) => ({ ...j, partsLines: lines, partsApprovalStatus: "pending" }));
+    setPartDesc(""); setPartPrice(""); setBusy("");
+  };
+
+  const take = async (m) => {
+    if (busy) return;
+    setBusy(m); setErr(""); setNote("");
+    try {
+      const res = await callPayments("take_payment", { bookingId: job.id, outcome, method: m });
+      if (m === "card") {
+        if (res.ok === false) { setCardFailed(true); setMethod("link"); setErr(`The saved card didn't go through (${String(res.reason || "declined").replace(/\.$/, "")}). Choose another way for the customer to pay.`); }
+        else setNote("Card charged.");
+      } else {
+        setWaiting(true);
+        if (res.error) setErr(res.error);
+        if (m === "sms" || m === "email") { if (res.sent) setNote(`Payment link sent by ${m === "sms" ? "text" : "email"}. Stay with the customer until it shows as paid.`); }
+        if (m === "qr") setQr(res.svg);
+        if (m === "phone") { window.open(res.url, "_blank", "noopener"); setNote("The payment page has opened. Hand your phone to the customer to enter their card."); }
+      }
+    } catch (e) { setErr(e.message); }
+    setBusy("");
+  };
+
+  // Before payments go live: customer pays the engineer directly, as now.
+  const paidDirectly = async () => {
+    if (busy) return;
+    setBusy("direct"); setErr("");
+    const { error } = await supabase.from("bookings").update({
+      payment_taken: true, payment_taken_at: new Date().toISOString(),
+      status: outcome, completed_date: new Date().toISOString().slice(0, 10),
+    }).eq("id", job.id);
+    setBusy("");
+    if (error) setErr(error.message); else { setJob((j) => ({ ...j, status: outcome === "Completed" ? "completed" : "beyond_repair" })); }
+  };
+
+  const choice = (on, label, onClick, disabled) => (
+    <button onClick={onClick} disabled={disabled} className="flex-1 rounded-lg px-3 py-3 text-sm font-bold"
+      style={on ? { background: C.primary, color: "#000" } : { background: "transparent", color: C.text, border: `1px solid ${C.border}` }}>
+      {label}{on ? " ✓" : ""}
+    </button>
+  );
+  const field = (label, children) => (<div className="mb-3"><p className="text-xs font-semibold mb-1" style={{ color: C.primary }}>{label}</p>{children}</div>);
+  const box = (v) => <div className="rounded-lg px-3 py-3 text-sm font-semibold" style={{ background: "rgba(255,255,255,0.9)", color: "#555" }}>{v}</div>;
+  const big = (label, onClick, disabled, key) => (
+    <button key={key} onClick={onClick} disabled={disabled} className="w-full rounded-lg px-3 py-3 text-sm font-bold mb-2"
+      style={{ background: disabled ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.14)", color: disabled ? C.light : C.text }}>{label}</button>
+  );
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.7)" }} onClick={onClose}>
+      <div className="w-full max-w-md rounded-xl p-5 overflow-y-auto" style={{ ...modalCardStyle, maxHeight: "92vh" }} onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-start justify-between mb-4">
+          <div>
+            <p className="text-lg font-bold" style={{ color: C.text }}>Take payment</p>
+            <p className="text-xs" style={{ color: C.mid }}>{job.customerName} · {job.applianceType}</p>
+          </div>
+          <button onClick={onClose} aria-label="Close" style={{ color: C.mid, background: "none", border: "none", fontSize: 20, cursor: "pointer" }}>✕</button>
+        </div>
+
+        {done ? (
+          <div className="text-center py-6">
+            <p className="text-3xl mb-2" style={{ color: C.success }}>✓</p>
+            <p className="text-lg font-bold" style={{ color: C.text }}>{paidStatuses.includes(job.paymentStatus) ? `Paid ${penceToGBP(job.totalPence ?? total)}` : "Payment recorded"}</p>
+            <p className="text-sm mt-1" style={{ color: C.mid }}>The job is now {job.status === "beyond_repair" || outcome === "Beyond Repair" ? "marked Beyond Repair" : "completed"}. Thank you.</p>
+            <button onClick={onClose} className="mt-4 px-4 py-2 rounded-lg text-sm font-bold" style={{ background: C.primary, color: "#000" }}>Done</button>
+          </div>
+        ) : (
+          <>
+            {live && showCard && (
+              <div className="mb-4">
+                <p className="text-xs font-semibold mb-1" style={{ color: C.primary }}>Payment method</p>
+                <div className="rounded-lg px-3 py-3 text-sm" style={{ background: "#f59e0b", color: "#3b2500" }}><b>Card on file</b> · fill out the form fields below</div>
+              </div>
+            )}
+            {live && !showCard && (
+              <div className="flex gap-2 mb-4 flex-wrap">
+                {choice(method === "link", "Payment link", () => setMethod("link"))}
+                {choice(method === "qr", "QR code", () => setMethod("qr"))}
+                {choice(method === "phone", "Phone payment", () => setMethod("phone"))}
+              </div>
+            )}
+
+            {field("Outcome", <div className="flex gap-2">
+              {choice(outcome === "Completed", "Repaired", () => setOutcome("Completed"), waiting)}
+              {choice(outcome === "Beyond Repair", "BER", () => setOutcome("Beyond Repair"), waiting)}
+            </div>)}
+
+            {!ber && (!waiting || job.partsLines?.length > 0) && field("Part costs", <>
+              {(job.partsLines || []).map((l, i) => (
+                <div key={l.id || i} className="flex justify-between text-sm py-1" style={{ color: C.text }}>
+                  <span>{l.description}</span><span>{penceToGBP(l.price_pence)}</span>
+                </div>
+              ))}
+              {job.partsLines?.length > 0 && <p className="text-xs mb-2" style={{ color: job.partsApprovalStatus === "approved" ? C.success : job.partsApprovalStatus === "declined" ? C.danger : C.warn }}>
+                {job.partsApprovalStatus === "approved" ? "Approved by the customer" : job.partsApprovalStatus === "declined" ? "Declined by the customer: not charged" : "Waiting for the customer to approve…"}
+              </p>}
+              {!waiting && <div className="flex gap-2">
+                <input className={inputCls} style={modalInputStyle} placeholder="Part (e.g. drain pump)" value={partDesc} onChange={(e) => setPartDesc(e.target.value)} />
+                <input className={inputCls} style={{ ...modalInputStyle, maxWidth: 100 }} type="number" step="0.01" placeholder="£" value={partPrice} onChange={(e) => setPartPrice(e.target.value)} />
+              </div>}
+              {!waiting && (partDesc || partPrice) && <button onClick={sendParts} disabled={!!busy} className="mt-2 px-3 py-2 rounded-lg text-xs font-bold" style={{ background: C.warnSoft, color: C.warn }}>{busy === "parts" ? "Sending…" : "Send parts to customer for approval"}</button>}
+            </>)}
+
+            {field("Callout", box(penceToGBP(callout)))}
+            {adminFee > 0 && field("Admin fee", box(penceToGBP(adminFee)))}
+            {field("Total", box(penceToGBP(total)))}
+
+            {partsPending && <p className="text-sm mb-3" style={{ color: C.warn }}>The customer needs to approve the parts before you can take payment.</p>}
+
+            {!live && <>
+              <p className="text-xs mb-2" style={{ color: C.light }}>Card payments through EasyRepair aren't switched on yet. Take payment from the customer as you do now, then confirm here.</p>
+              {big(busy === "direct" ? "Saving…" : `Customer has paid ${penceToGBP(total)}`, paidDirectly, !!busy || partsPending)}
+            </>}
+
+            {live && showCard && big(busy === "card" ? "Processing…" : "Process payment", () => take("card"), !!busy || partsPending)}
+
+            {live && !showCard && method === "link" && <>
+              {big(busy === "sms" ? "Sending…" : "Send payment link via text", () => take("sms"), !!busy || partsPending)}
+              {big(busy === "email" ? "Sending…" : "Send payment link via email", () => take("email"), !!busy || partsPending)}
+            </>}
+            {live && !showCard && method === "qr" && (qr
+              ? <div className="flex flex-col items-center mb-3"><div className="rounded-lg p-3" style={{ background: "#fff" }} dangerouslySetInnerHTML={{ __html: qr }} /><p className="text-xs mt-2" style={{ color: C.mid }}>Ask the customer to scan this with their phone camera and pay {penceToGBP(total)}.</p></div>
+              : big(busy === "qr" ? "Creating…" : "Show QR code", () => take("qr"), !!busy || partsPending))}
+            {live && !showCard && method === "phone" && <>
+              <p className="text-xs mb-2" style={{ color: C.light }}>Opens the secure Stripe payment page on your phone for the customer to enter their card. You never see their card details.</p>
+              {big(busy === "phone" ? "Opening…" : "Open payment page", () => take("phone"), !!busy || partsPending)}
+            </>}
+
+            {waiting && <p className="text-sm mt-2 font-semibold" style={{ color: C.warn }}>Awaiting payment… This updates by itself when the customer pays. Please don't leave until it shows as paid.</p>}
+            {note && <p className="text-sm mt-2" style={{ color: C.success }}>{note}</p>}
+            {err && <p className="text-sm mt-2" style={{ color: C.danger }}>{err}</p>}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── one-line earnings for booking lists ────────────────────────────────────
 export function JobEarningsLine({ job, data }) {
   if (!data?.ready) return null;
@@ -198,6 +391,7 @@ export function JobPaymentSection({ job, currentUser, data, onChanged }) {
   const [err, setErr] = useState("");
   const [flagType, setFlagType] = useState(null);
   const [copied, setCopied] = useState(false);
+  const [noShowArmed, setNoShowArmed] = useState(false);
   useEffect(() => { setLines((job.partsLines || []).map((l) => ({ ...l, price: ((l.price_pence || 0) / 100).toFixed(2) }))); }, [job.partsLines]);
   if (!data.ready) return null;
 
@@ -267,6 +461,26 @@ export function JobPaymentSection({ job, currentUser, data, onChanged }) {
           </div>
         </div>
       )}
+
+      {/* customer not home (two taps) */}
+      {job.scheduledDate && !job.noShow && !["completed", "beyond_repair", "cancelled"].includes(job.status) && (
+        <div className="mt-3">
+          <button
+            onClick={async () => {
+              if (!noShowArmed) { setNoShowArmed(true); return; }
+              setNoShowArmed(false);
+              const { error } = await supabase.from("bookings").update({ no_show: true }).eq("id", job.id);
+              if (error) setErr(error.message); else await onChanged?.();
+            }}
+            title="Use this while you're at the property and the customer isn't there"
+            className="px-3 py-1.5 rounded-lg text-xs font-semibold"
+            style={{ background: C.warnSoft, color: C.warn }}
+          >
+            {noShowArmed ? "Tap again to confirm the customer isn't home" : "Customer not home"}
+          </button>
+        </div>
+      )}
+      {job.noShow && <p className="text-xs mt-3" style={{ color: C.warn }}>You recorded that the customer wasn't home. EasyRepair will contact them and may charge a no-show fee, part of which is paid to you.</p>}
 
       {/* parts */}
       <div className="mt-4">

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { supabase } from "./lib/supabaseClient";
-import { usePortalPaymentData, PaymentsSetupCard, JobEarningsLine, JobPaymentSection, EarningsPanel, completesBeforePayment, chargeOnCompletion } from "./PortalPayments";
+import { usePortalPaymentData, PaymentsSetupCard, JobEarningsLine, JobPaymentSection, EarningsPanel, completesBeforePayment, chargeOnCompletion, TakePaymentModal, isAwaitingPayment } from "./PortalPayments";
 import { mapPaymentFields, isStripeJob } from "./paymentsShared";
 
 /* ------------------------------------------------------------------ */
@@ -219,6 +219,7 @@ function mapBookingRow(row) {
     ...mapPaymentFields(row),
     bookingRef: row.booking_ref || null,
     wantsProtectionPlan: !!row.wants_protection_plan,
+    isTest: !!row.is_test,
     id: row.id,
     customerName: row.customer,
     phone: row.phone,
@@ -1150,8 +1151,7 @@ function BookingDetailModal({ job, onClose, onSaveDetails, currentUser, payData,
 const CLOSED_STATUSES = ["completed", "beyond_repair", "cancelled"];
 
 function BookingsView({ currentUser, jobs, onUpdateJob, onSaveJobDetails, onDeclineJob, declineWindowMinutes, payData, onReloadJobs }) {
-  // Two-tap "Customer not home": first tap arms it for this job, second records it.
-  const [noShowArmed, setNoShowArmed] = useState(null);
+  const [takePaymentJobId, setTakePaymentJobId] = useState(null);
   const [tab, setTab] = useState("bookings");
   const [subTab, setSubTab] = useState("active");
   const [declining, setDeclining] = useState(null);
@@ -1289,77 +1289,30 @@ function BookingsView({ currentUser, jobs, onUpdateJob, onSaveJobDetails, onDecl
                   <JobEarningsLine job={j} data={payData} />
                   {subTab === "active" && (
                     <div className="flex gap-2 mt-3 items-center flex-wrap" onClick={(e) => e.stopPropagation()}>
-                      <button onClick={() => onUpdateJob({ ...j, status: "in_progress" })} className="px-3 py-1.5 rounded-lg text-xs font-semibold" style={{ background: C.orangeSoft, color: C.orange }}>Mark In Progress</button>
-                      <button
-                        onClick={async () => {
-                          const err = await onUpdateJob({ ...j, setPaymentTaken: !j.paymentTaken });
-                          if (err) setNotice({ title: "Couldn't update payment", message: err });
-                        }}
-                        title={j.paymentTaken ? "Payment confirmed — click to undo" : "Confirm the customer has paid"}
-                        className="px-3 py-1.5 rounded-lg text-xs font-semibold"
-                        style={j.paymentTaken
-                          ? { background: C.primary, color: "#000" }
-                          : { background: "rgba(212,255,60,0.12)", color: C.primary, border: `1px solid ${C.primary}` }}
-                      >
-                        {j.paymentTaken ? "✓ Payment Taken" : "Payment Taken"}
-                      </button>
-                      <button
-                        onClick={async () => {
-                          if (j.partsApprovalStatus === "pending") {
-                            setNotice({
-                              title: "Parts not approved yet",
-                              message: "The customer needs to approve the parts you've quoted before this job can be completed. Open the booking to check the parts, or flag a problem if the customer won't approve them.",
-                            });
-                            return;
-                          }
-                          const autoPay = completesBeforePayment(j, payData?.settings);
-                          if (!j.paymentTaken && !autoPay) {
-                            setNotice({
-                              title: "Payment not taken yet",
-                              message: "This job can't be marked as completed until payment has been taken. Collect payment from the customer, press \"Payment Taken\", then mark the job as completed.",
-                            });
-                            return;
-                          }
-                          const err = await onUpdateJob({ ...j, status: "completed", completedDate: new Date().toISOString() });
-                          if (err) { setNotice({ title: "Couldn't mark as completed", message: err }); return; }
-                          if (autoPay) {
-                            const r = await chargeOnCompletion(j);
-                            if (r.error) setNotice({ title: "Payment needs attention", message: r.error });
-                            else if (r.message) setNotice({ title: "Job completed", message: r.message });
-                            onReloadJobs?.();
-                          }
-                        }}
-                        className="px-3 py-1.5 rounded-lg text-xs font-semibold"
-                        style={{ background: C.successSoft, color: C.success, opacity: j.paymentTaken || completesBeforePayment(j, payData?.settings) ? 1 : 0.55 }}
-                      >
-                        Mark Completed
-                      </button>
-                      <button onClick={() => onUpdateJob({ ...j, status: "beyond_repair" })} className="px-3 py-1.5 rounded-lg text-xs font-semibold" style={{ background: C.dangerSoft, color: C.danger }}>Beyond Repair</button>
-                      {!j.noShow && (
-                        <button
-                          onClick={async () => {
-                            if (noShowArmed !== j.id) { setNoShowArmed(j.id); return; }
-                            setNoShowArmed(null);
-                            const { error } = await supabase.from("bookings").update({ no_show: true }).eq("id", j.id);
-                            if (error) setNotice({ title: "Couldn't record that", message: error.message });
-                            else { setNotice({ title: "Customer not home recorded", message: "Thanks. EasyRepair will contact the customer and may charge a no-show fee, part of which is paid to you." }); onReloadJobs?.(); }
-                          }}
-                          title="Use this while you're at the property and the customer isn't there"
-                          className="px-3 py-1.5 rounded-lg text-xs font-semibold"
-                          style={{ background: C.warnSoft, color: C.warn }}
-                        >
-                          {noShowArmed === j.id ? "Tap again to confirm" : "Customer not home"}
-                        </button>
-                      )}
-                      {canDecline && (
-                        <button
-                          onClick={() => handleDecline(j)}
-                          disabled={declining === j.id}
-                          className="px-3 py-1.5 rounded-lg text-xs font-semibold"
-                          style={{ background: C.dangerSoft, color: C.danger, opacity: declining === j.id ? 0.6 : 1 }}
-                        >
-                          {declining === j.id ? "Declining…" : `Decline (${mins}m left)`}
-                        </button>
+                      {!j.scheduledDate ? (
+                        <>
+                          {/* New job: decline (while the window is open) or schedule it. */}
+                          {canDecline && (
+                            <button
+                              onClick={() => handleDecline(j)}
+                              disabled={declining === j.id}
+                              className="px-3 py-1.5 rounded-lg text-xs font-semibold"
+                              style={{ background: C.dangerSoft, color: C.danger, opacity: declining === j.id ? 0.6 : 1 }}
+                            >
+                              {declining === j.id ? "Declining…" : `Decline (${mins}m left)`}
+                            </button>
+                          )}
+                          <button onClick={() => setSelectedJobId(j.id)} className="px-3 py-1.5 rounded-lg text-xs font-semibold" style={{ background: "rgba(255,255,255,0.85)", color: "#333" }}>Schedule</button>
+                        </>
+                      ) : (
+                        <>
+                          {/* Scheduled: work the job, then Take Payment completes it. */}
+                          {j.status !== "in_progress" && !isAwaitingPayment(j) && (
+                            <button onClick={() => onUpdateJob({ ...j, status: "in_progress" })} className="px-3 py-1.5 rounded-lg text-xs font-semibold" style={{ background: C.orangeSoft, color: C.orange }}>Mark In Progress</button>
+                          )}
+                          {isAwaitingPayment(j) && <Pill bg={C.warnSoft} color={C.warn}>Awaiting payment</Pill>}
+                          <button onClick={() => setTakePaymentJobId(j.id)} className="px-4 py-1.5 rounded-lg text-xs font-bold" style={{ background: C.primary, color: "#000" }}>Take Payment</button>
+                        </>
                       )}
                     </div>
                   )}
@@ -1381,6 +1334,15 @@ function BookingsView({ currentUser, jobs, onUpdateJob, onSaveJobDetails, onDecl
             </>
           )}
         </>
+      )}
+
+      {takePaymentJobId && payData && myJobs.find((x) => x.id === takePaymentJobId) && (
+        <TakePaymentModal
+          job={myJobs.find((x) => x.id === takePaymentJobId)}
+          data={payData}
+          onClose={() => { setTakePaymentJobId(null); onReloadJobs?.(); }}
+          onDone={() => onReloadJobs?.()}
+        />
       )}
 
       {selectedJob && (
