@@ -45,3 +45,22 @@ input[type="time"]::-webkit-calendar-picker-indicator {
   cursor: pointer;
   opacity: 0.85;
 }
+
+/* Popups (booking details, take payment, flag a problem, notices).
+   ScrollLock in App.jsx freezes the page behind; these stop a scroll inside
+   the popup from carrying on into the page once it hits the top or bottom,
+   stop sideways scrolling, and size the popup to the part of the screen
+   actually visible on phones (dvh leaves out Safari's toolbars). */
+.modal-overlay {
+  overscroll-behavior: contain;
+}
+.modal-card {
+  overscroll-behavior: contain;
+  overflow-x: hidden;
+  overflow-wrap: anywhere;
+  -webkit-overflow-scrolling: touch;
+  max-width: calc(100vw - 2rem);
+}
+@supports (height: 100dvh) {
+  .modal-card { max-height: 88dvh !important; }
+}
