@@ -18,7 +18,7 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 import { supabase } from "./lib/supabaseClient";
-import { C, Pill, Field, inputCls, modalInputStyle, modalCardStyle } from "./App";
+import { C, Pill, Field, inputCls, modalInputStyle, modalCardStyle, ScrollLock } from "./App";
 import {
   mergeSettings, jobMoney, penceToGBP, poundsToPence, pctLabel, paymentRoute, ROUTE_LABELS,
   PAYMENT_STATUS_LABELS, PARTS_STATUS_LABELS, STRIPE_STATUS_LABELS, cancellationFee,
@@ -277,8 +277,9 @@ export function TakePaymentModal({ job: initialJob, data, onClose, onDone }) {
   );
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.7)" }} onClick={onClose}>
-      <div className="w-full max-w-md rounded-xl p-5 overflow-y-auto" style={{ ...modalCardStyle, maxHeight: "92vh" }} onClick={(e) => e.stopPropagation()}>
+    <div className="modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.7)" }} onClick={onClose}>
+      <ScrollLock />
+      <div className="modal-card w-full max-w-md rounded-xl p-5 overflow-y-auto" style={{ ...modalCardStyle, maxHeight: "92vh" }} onClick={(e) => e.stopPropagation()}>
         <div className="flex items-start justify-between mb-4">
           <div>
             <p className="text-lg font-bold" style={{ color: C.text }}>Take payment</p>
@@ -568,8 +569,9 @@ export function FlagModal({ job, currentUser, categories, type, onClose, onDone 
     onDone();
   };
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.6)" }} onClick={onClose}>
-      <div className="w-full max-w-md rounded-xl p-6" style={modalCardStyle} onClick={(e) => e.stopPropagation()}>
+    <div className="modal-overlay fixed inset-0 z-[60] flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.6)" }} onClick={onClose}>
+      <ScrollLock />
+      <div className="modal-card w-full max-w-md rounded-xl p-6 overflow-y-auto" style={{ ...modalCardStyle, maxHeight: "90vh" }} onClick={(e) => e.stopPropagation()}>
         <h3 className="text-lg font-bold mb-1" style={{ color: C.text }}>{type === "dispute" ? "Dispute this decision" : "Flag a problem"}</h3>
         <p className="text-sm mb-4" style={{ color: C.mid }}>{type === "dispute" ? "EasyRepair pauses any commission recovery on this job while it reviews your dispute, and tells you the outcome." : "EasyRepair will review it and let you know the outcome here and by email."}</p>
         <Field label="Category">
