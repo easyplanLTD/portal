@@ -47,20 +47,38 @@ input[type="time"]::-webkit-calendar-picker-indicator {
 }
 
 /* Popups (booking details, take payment, flag a problem, notices).
-   ScrollLock in App.jsx freezes the page behind; these stop a scroll inside
-   the popup from carrying on into the page once it hits the top or bottom,
-   stop sideways scrolling, and size the popup to the part of the screen
-   actually visible on phones (dvh leaves out Safari's toolbars). */
+   ScrollLock in App.jsx freezes the page behind. The dark overlay itself is
+   the one thing that scrolls: the popup grows to its full height inside it
+   instead of being a capped box with its own scrollbar. A scroll box inside
+   a fixed overlay is unreliable on iPhone (it could stop short of the top or
+   bottom, and a centred box taller than the screen had its top cut off).
+   margin:auto keeps short popups centred, while tall ones start at the top
+   and scroll all the way to the bottom. */
 .modal-overlay {
+  overflow-y: auto;
+  overflow-x: hidden;
   overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  align-items: flex-start !important;
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
 }
 .modal-card {
-  overscroll-behavior: contain;
-  overflow-x: hidden;
+  margin-top: auto;
+  margin-bottom: auto;
+  flex-shrink: 0;
+  max-height: none !important;
+  overflow: hidden !important;
   overflow-wrap: anywhere;
-  -webkit-overflow-scrolling: touch;
+  min-width: 0;
   max-width: calc(100vw - 2rem);
 }
-@supports (height: 100dvh) {
-  .modal-card { max-height: 88dvh !important; }
+
+/* iPhones zoom the whole page in when you tap a field whose text is smaller
+   than 16px, and stay zoomed after you leave it -- which is what let the
+   booking popup slide sideways and pushed text off the edge. 16px text in
+   fields on phones stops that zoom from happening. */
+@media (max-width: 767px) {
+  input, select, textarea {
+    font-size: 16px !important;
+  }
 }
