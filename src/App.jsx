@@ -464,6 +464,30 @@ const inputStyle = { background: C.sidebar, border: `1px solid ${C.border}`, col
 const modalCardStyle = { background: C.card, border: `1px solid ${C.primary}`, boxShadow: "0 24px 80px rgba(0,0,0,.4), 0 0 18px rgba(212,255,60,0.15)" };
 const modalInputStyle = { ...inputStyle, border: `1.5px solid ${C.primary}` };
 
+// Rendered inside every popup. While any popup is open the page behind it is
+// frozen in place (iOS Safari ignores overflow:hidden on body, so the body is
+// pinned with position:fixed and put back at the same scroll spot on close).
+// Counted so stacked popups (e.g. Flag a problem over a booking) don't unlock
+// the page when only the top one closes.
+let scrollLocks = 0;
+let lockedScrollY = 0;
+function ScrollLock() {
+  useEffect(() => {
+    const b = document.body;
+    if (scrollLocks++ === 0) {
+      lockedScrollY = window.scrollY;
+      Object.assign(b.style, { position: "fixed", top: `-${lockedScrollY}px`, left: "0", right: "0", width: "100%", overflow: "hidden" });
+    }
+    return () => {
+      if (--scrollLocks === 0) {
+        Object.assign(b.style, { position: "", top: "", left: "", right: "", width: "", overflow: "" });
+        window.scrollTo(0, lockedScrollY);
+      }
+    };
+  }, []);
+  return null;
+}
+
 /* ------------------------------------------------------------------ */
 /* Login                                                                */
 /* ------------------------------------------------------------------ */
@@ -1028,12 +1052,13 @@ function BookingDetailModal({ job, onClose, onSaveDetails, currentUser, payData,
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      className="modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4"
       style={{ background: "rgba(0,0,0,0.6)" }}
       onClick={onClose}
     >
+      <ScrollLock />
       <div
-        className="w-full max-w-lg rounded-xl p-6 max-h-[90vh] overflow-y-auto"
+        className="modal-card w-full max-w-lg rounded-xl p-6 max-h-[90vh] overflow-y-auto"
         style={modalCardStyle}
         onClick={(e) => e.stopPropagation()}
       >
@@ -1370,14 +1395,15 @@ function BookingsView({ currentUser, jobs, onUpdateJob, onSaveJobDetails, onDecl
 
       {notice && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          className="modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4"
           style={{ background: "rgba(0,0,0,0.6)" }}
           onClick={() => setNotice(null)}
         >
+          <ScrollLock />
           <div
             role="alertdialog"
             aria-modal="true"
-            className="w-full max-w-sm rounded-xl p-6"
+            className="modal-card w-full max-w-sm rounded-xl p-6"
             style={modalCardStyle}
             onClick={(e) => e.stopPropagation()}
           >
@@ -2083,4 +2109,4 @@ export default function App() {
 
 // Shared look for PortalPayments.jsx (only used inside its components, so
 // the import cycle between the two files is safe).
-export { C, Pill, Field, inputCls, modalInputStyle, modalCardStyle };
+export { C, Pill, Field, inputCls, modalInputStyle, modalCardStyle, ScrollLock };
