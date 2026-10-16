@@ -61,6 +61,13 @@ input[type="time"]::-webkit-calendar-picker-indicator {
   -webkit-overflow-scrolling: touch;
   align-items: flex-start !important;
   padding-bottom: max(1rem, env(safe-area-inset-bottom));
+  /* Above the phone's bottom menu bar (Dashboard / Bookings / Settings),
+     which otherwise sat on top of the popup and hid its last lines. */
+  z-index: 100 !important;
+}
+/* A popup opened from inside another popup (Flag a problem) stays on top. */
+.modal-overlay.z-\[60\] {
+  z-index: 110 !important;
 }
 .modal-card {
   margin-top: auto;
