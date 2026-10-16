@@ -680,3 +680,120 @@ export function EarningsPanel({ currentUser, jobs, data, onOpenJob }) {
     </div>
   );
 }
+
+// ─── CSV export (Bookings -> Payments) ──────────────────────────────────────
+// Lets an SP download their payments for their accountant. One row per money
+// line: jobs paid through Stripe, jobs paid by EasyRepair at the SP's per-job
+// rate, no-show/late-cancel fee shares, and commission they repay. Amounts are
+// plain numbers in pounds (no £ sign) so spreadsheets can add them up.
+const csvCell = (v) => {
+  const s = v == null ? "" : String(v);
+  return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+};
+const pounds = (pence) => (pence == null || pence === "" ? "" : (Number(pence) / 100).toFixed(2));
+const dayOf = (d) => (d ? String(d).slice(0, 10) : "");
+const ukDate = (iso) => (iso ? iso.split("-").reverse().join("/") : "");
+const refOf = (j) => j?.bookingRef || (j?.id ? `#${String(j.id).slice(0, 8)}` : "");
+
+export function buildPaymentRows({ currentUser, jobs, data }) {
+  const mine = jobs.filter((j) => j.engineerId === currentUser.engineerRowId);
+  const settings = data?.settings;
+  const overrides = data?.overrides || [];
+  const rows = [];
+  const stripeJob = (j) => (j.paymentStatus && j.paymentStatus !== "not_charged") || j.hasSavedCard || j.paymentTiming === "after";
+
+  for (const j of mine) {
+    const base = { ref: refOf(j), customer: j.customerName || "", postcode: j.postcode || "", appliance: j.applianceType || "", completed: dayOf(j.completedDate) };
+    if (j.status === "completed" && stripeJob(j) && settings) {
+      const m = jobMoney(j, settings, overrides);
+      rows.push({
+        ...base,
+        date: dayOf(j.paidAt) || base.completed,
+        type: "Job (paid through Stripe)",
+        customerPaid: m.total, parts: m.partsApproved, commission: m.commission,
+        cardFee: m.engineerPaysFee ? m.fee : 0, refund: j.refundAmountPence,
+        amount: m.engineerNet,
+        status: PAYMENT_STATUS_LABELS[j.paymentStatus] || j.paymentStatus,
+        paidOn: dayOf(j.paidAt),
+      });
+    } else if (j.status === "completed" && !stripeJob(j)) {
+      const rate = Math.round(Number(currentUser.payRate || 0) * 100);
+      rows.push({
+        ...base,
+        date: base.completed,
+        type: "Job (paid by EasyRepair)",
+        amount: rate,
+        status: j.paid ? "Paid" : "Unpaid",
+      });
+    }
+    if (j.cancellationFeeStatus === "charged" && Number(j.feeEngineerSharePence) > 0) {
+      rows.push({
+        ...base,
+        date: dayOf(j.noShowAt || j.cancelledAt),
+        type: j.cancellationFeeType === "no_show" ? "No-show fee share" : "Late cancellation fee share",
+        customerPaid: j.cancellationFeePence,
+        amount: Number(j.feeEngineerSharePence),
+        status: "Charged",
+      });
+    }
+  }
+
+  for (const r of data?.recoveries || []) {
+    const j = mine.find((x) => x.id === r.booking_id);
+    rows.push({
+      ref: refOf(j), customer: j?.customerName || "", postcode: j?.postcode || "", appliance: j?.applianceType || "", completed: dayOf(j?.completedDate),
+      date: dayOf(r.created_at),
+      type: `Commission recovery${r.reason ? ` (${r.reason})` : ""}`,
+      amount: -Number(r.amount_pence || 0),
+      status: r.status,
+    });
+  }
+
+  return rows.sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+}
+
+export function ExportPaymentsBar({ currentUser, jobs, data }) {
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const all = buildPaymentRows({ currentUser, jobs, data });
+  const rows = all.filter((r) => (!from || (r.date && r.date >= from)) && (!to || (r.date && r.date <= to)));
+  const total = rows.reduce((s, r) => s + Number(r.amount || 0), 0);
+
+  const download = () => {
+    const head = ["Date", "Type", "Booking ref", "Customer", "Postcode", "Appliance", "Job completed", "Customer paid (£)", "Parts (£)", "EasyRepair commission (£)", "Card fee you paid (£)", "Refunded to customer (£)", "Amount to you (£)", "Status", "Paid on"];
+    const lines = [head, ...rows.map((r) => [
+      ukDate(r.date), r.type, r.ref, r.customer, r.postcode, r.appliance, ukDate(r.completed),
+      pounds(r.customerPaid), pounds(r.parts), pounds(r.commission), pounds(r.cardFee), pounds(r.refund), pounds(r.amount), r.status || "", ukDate(r.paidOn),
+    ]), [], ["", "Total", "", "", "", "", "", "", "", "", "", "", pounds(total)]];
+    const csv = "﻿" + lines.map((l) => l.map(csvCell).join(",")).join("\r\n");
+    const name = (currentUser.name || "payments").replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase();
+    const range = from || to ? `-${from || "start"}-to-${to || "today"}` : `-${new Date().toISOString().slice(0, 10)}`;
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    const a = document.createElement("a");
+    a.href = url; a.download = `easyrepair-payments-${name}${range}.csv`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
+  const dateInp = { ...modalInputStyle, colorScheme: "dark" };
+  return (
+    <div className="rounded-xl p-4 mb-5" style={{ background: C.card, border: `1px solid ${C.border}` }}>
+      <div className="flex flex-wrap items-end gap-3">
+        <div className="min-w-0 flex-1" style={{ minWidth: 130 }}>
+          <label className="block text-xs mb-1" style={{ color: C.mid }}>From</label>
+          <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className={inputCls} style={dateInp} />
+        </div>
+        <div className="min-w-0 flex-1" style={{ minWidth: 130 }}>
+          <label className="block text-xs mb-1" style={{ color: C.mid }}>To</label>
+          <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className={inputCls} style={dateInp} />
+        </div>
+        <button onClick={download} disabled={!rows.length} className="px-4 py-2 rounded-lg text-sm font-semibold w-full sm:w-auto" style={{ ...btn("primary"), opacity: rows.length ? 1 : 0.5 }}>
+          Export CSV ({rows.length})
+        </button>
+      </div>
+      <p className="text-xs mt-2" style={{ color: C.mid }}>
+        {rows.length ? `${rows.length} line${rows.length === 1 ? "" : "s"} · ${penceToGBP(total)} to you` : "Nothing to export for these dates."} Leave the dates blank to export everything. Opens in Excel, Google Sheets or your accounting software.
+      </p>
+    </div>
+  );
+}
