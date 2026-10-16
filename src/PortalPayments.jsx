@@ -778,6 +778,8 @@ export function ExportPaymentsBar({ currentUser, jobs, data }) {
   const dateInp = { ...modalInputStyle, colorScheme: "dark" };
   return (
     <div className="rounded-xl p-4 mb-5" style={{ background: C.card, border: `1px solid ${C.border}` }}>
+      <p className="font-semibold" style={{ color: C.text }}>Export your payments</p>
+      <p className="text-xs mb-3" style={{ color: C.mid }}>Download your payments as a spreadsheet for your accountant or tax return.</p>
       <div className="flex flex-wrap items-end gap-3">
         <div className="min-w-0 flex-1" style={{ minWidth: 130 }}>
           <label className="block text-xs mb-1" style={{ color: C.mid }}>From</label>
@@ -792,7 +794,7 @@ export function ExportPaymentsBar({ currentUser, jobs, data }) {
         </button>
       </div>
       <p className="text-xs mt-2" style={{ color: C.mid }}>
-        {rows.length ? `${rows.length} line${rows.length === 1 ? "" : "s"} · ${penceToGBP(total)} to you` : "Nothing to export for these dates."} Leave the dates blank to export everything. Opens in Excel, Google Sheets or your accounting software.
+        {rows.length ? `${rows.length} line${rows.length === 1 ? "" : "s"} · ${penceToGBP(total)} to you.` : "Nothing to export for these dates."} Leave the dates blank to export everything. Opens in Excel, Google Sheets or your accounting software.
       </p>
     </div>
   );
