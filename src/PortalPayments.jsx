@@ -396,7 +396,9 @@ export function JobPaymentSection({ job, currentUser, data, onChanged }) {
   useEffect(() => { setLines((job.partsLines || []).map((l) => ({ ...l, price: ((l.price_pence || 0) / 100).toFixed(2) }))); }, [job.partsLines]);
   if (!data.ready) return null;
 
-  const live = settings.payments_live;
+  // Test jobs behave as live (Stripe test mode) so parts approval links and
+  // payment links are sent for them too -- same rule as TakePaymentModal.
+  const live = !!settings.payments_live || !!job.isTest;
   const m = jobMoney(job, settings, overrides);
   const mIf = jobMoney(job, settings, overrides, { includePending: true });
   const route = paymentRoute(job);
