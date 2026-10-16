@@ -1182,7 +1182,18 @@ function BookingsView({ currentUser, jobs, onUpdateJob, onSaveJobDetails, onDecl
   const pageTitle = tabs.find((t) => t.key === tab)?.label || "Bookings";
 
   const activeJobs = myJobs.filter((j) => !CLOSED_STATUSES.includes(j.status));
-  const completedJobs = myJobs.filter((j) => CLOSED_STATUSES.includes(j.status));
+  // Completed tab: most recently completed first. `completed_date` is a
+  // date only, so same-day jobs fall back to when payment was taken (set
+  // just before completion), then the visit date. Jobs closed without a
+  // completed date (e.g. cancelled) sort by their visit date instead.
+  const completionKey = (j) => j.completedDate || (j.returnVisitDate || j.scheduledDate || "").slice(0, 10);
+  const completedJobs = myJobs
+    .filter((j) => CLOSED_STATUSES.includes(j.status))
+    .sort((a, b) =>
+      completionKey(b).localeCompare(completionKey(a)) ||
+      (b.paymentTakenAt || "").localeCompare(a.paymentTakenAt || "") ||
+      (b.returnVisitDate || b.scheduledDate || "").localeCompare(a.returnVisitDate || a.scheduledDate || "")
+    );
   const subTabs = [
     { key: "active", label: "Active", count: activeJobs.length },
     { key: "completed", label: "Completed", count: completedJobs.length },
