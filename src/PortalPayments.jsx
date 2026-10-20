@@ -22,7 +22,7 @@ import { C, Pill, Field, inputCls, modalInputStyle, modalCardStyle, ScrollLock }
 import {
   mergeSettings, jobMoney, penceToGBP, poundsToPence, pctLabel, paymentRoute, ROUTE_LABELS,
   PAYMENT_STATUS_LABELS, PARTS_STATUS_LABELS, STRIPE_STATUS_LABELS, cancellationFee,
-  mapPaymentFields, calloutPenceFor,
+  mapPaymentFields, calloutPenceFor, PAID_VIA_LABELS, cardLabel,
 } from "./paymentsShared";
 
 async function callPayments(action, body) {
@@ -451,6 +451,23 @@ export function JobPaymentSection({ job, currentUser, data, onChanged }) {
         : route === "pay_after"
           ? <p className="text-xs mt-2" style={{ color: C.warn }}>Pay after repair: make sure the customer pays through the payment link before you leave.</p>
           : null}
+
+      {/* payment record (once the customer has paid) */}
+      {job.stripePaymentIntentId && ["paid", "refunded", "part_refunded"].includes(job.paymentStatus) && (
+        <div className="rounded-lg p-3 mt-3" style={{ background: "rgba(255,255,255,0.04)", border: `1px solid ${C.border}` }}>
+          <p className="text-sm font-medium" style={{ color: C.text }}>Payment received</p>
+          <Line k="Paid" v={job.paidAt ? new Date(job.paidAt).toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "\u2014"} />
+          <Line k="How" v={[PAID_VIA_LABELS[job.paidVia] || "Card", cardLabel(job)].filter(Boolean).join(" \u00b7 ")} />
+          <Line k="Amount" v={penceToGBP(job.totalPence ?? m.total)} />
+          <Line k="Your share" v={penceToGBP(job.engineerSharePence ?? m.engineerNet)} />
+          <p className="text-xs mt-2" style={{ color: C.light }}>Payment reference</p>
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs break-all" style={{ color: C.mid, fontFamily: "monospace" }}>{job.stripePaymentIntentId}</span>
+            <button onClick={() => { navigator.clipboard?.writeText(job.stripePaymentIntentId); setCopied(true); setTimeout(() => setCopied(false), 2000); }} className="px-2 py-1 rounded-lg text-xs font-semibold" style={btn("ghost")}>{copied ? "Copied" : "Copy"}</button>
+          </div>
+          <p className="text-xs mt-1" style={{ color: C.light }}>Quote this, with the booking reference, if you need to ask EasyRepair about this payment.</p>
+        </div>
+      )}
 
       {/* payment link for Pay after repair */}
       {job.paymentLinkUrl && job.paymentStatus !== "paid" && (
