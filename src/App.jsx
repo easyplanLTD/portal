@@ -1989,18 +1989,26 @@ export default function App() {
   // Filtered to `engineer_id=eq.<their row>` so this engineer's browser only
   // ever receives their own rows over the wire, matching the "bookings:
   // engineer sees own" RLS policy loadBookings already relies on.
+  // Bumped to rebuild the channel if it ever ends up closed/errored.
+  const [rtEpoch, setRtEpoch] = useState(0);
   useEffect(() => {
     if (!currentUser?.engineerRowId) return;
-    const filter = `engineer_id=eq.${currentUser.engineerRowId}`;
+    const engineerRowId = currentUser.engineerRowId;
+    const filter = `engineer_id=eq.${engineerRowId}`;
+    let disposed = false, retry = null;
     const channel = supabase
-      .channel(`bookings-sync-${currentUser.engineerRowId}`)
+      .channel(`bookings-sync-${engineerRowId}-${rtEpoch}`)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "bookings", filter }, (payload) => {
         const row = mapBookingRow(payload.new || {});
         setJobs((prev) => (prev.some((j) => j.id === row.id) ? prev : [...prev, row]));
       })
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "bookings", filter }, (payload) => {
         const row = mapBookingRow(payload.new || {});
-        setJobs((prev) => prev.map((j) => (j.id === row.id ? row : j)));
+        // Upsert: a booking that's just been ASSIGNED to this engineer from
+        // FixFlow arrives as an UPDATE (engineer_id changed on an existing
+        // row), not an INSERT -- previously it was silently dropped here
+        // because it wasn't in the list yet, so it only showed after a reload.
+        setJobs((prev) => (prev.some((j) => j.id === row.id) ? prev.map((j) => (j.id === row.id ? row : j)) : [...prev, row]));
       })
       .on("postgres_changes", { event: "DELETE", schema: "public", table: "bookings", filter }, (payload) => {
         // A DELETE payload's `old` row is normally just the primary key
@@ -2010,8 +2018,45 @@ export default function App() {
         if (oldId == null) return;
         setJobs((prev) => prev.filter((j) => j.id !== oldId));
       })
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
+      .subscribe((status) => {
+        if (disposed) return;
+        // Fires on first join and on every automatic rejoin after the socket
+        // dropped (phone locked, laptop asleep, background tab) -- catch up
+        // on anything that changed while we weren't listening.
+        if (status === "SUBSCRIBED") loadBookings(engineerRowId);
+        if (status === "CLOSED" || status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+          clearTimeout(retry);
+          retry = setTimeout(() => { if (!disposed) setRtEpoch((e) => e + 1); }, 5000);
+        }
+      });
+    return () => { disposed = true; clearTimeout(retry); supabase.removeChannel(channel); };
+  }, [currentUser?.engineerRowId, rtEpoch]);
+
+  // ── LIVE-SYNC SAFETY NET ──────────────────────────────────────────────────
+  // Same as FixFlow: the socket above is the fast path, but phones suspend
+  // background tabs and laptops sleep, silently dropping it. Re-pull this
+  // engineer's bookings when the app comes back into view / regains focus /
+  // comes back online / wakes from Chrome tab freezing, and every 30s while
+  // visible. Also covers a job being reassigned AWAY from this engineer,
+  // which realtime can't deliver (they can no longer see that row).
+  useEffect(() => {
+    if (!currentUser?.engineerRowId) return;
+    const engineerRowId = currentUser.engineerRowId;
+    const resync = () => { if (document.visibilityState === "visible") loadBookings(engineerRowId); };
+    document.addEventListener("visibilitychange", resync);
+    window.addEventListener("focus", resync);
+    window.addEventListener("online", resync);
+    window.addEventListener("pageshow", resync);
+    document.addEventListener("resume", resync);
+    const iv = setInterval(resync, 30000);
+    return () => {
+      document.removeEventListener("visibilitychange", resync);
+      window.removeEventListener("focus", resync);
+      window.removeEventListener("online", resync);
+      window.removeEventListener("pageshow", resync);
+      document.removeEventListener("resume", resync);
+      clearInterval(iv);
+    };
   }, [currentUser?.engineerRowId]);
 
   async function updateJob(updated) {
