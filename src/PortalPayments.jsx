@@ -187,6 +187,10 @@ export function TakePaymentModal({ job: initialJob, data, onClose, onDone }) {
   const [method, setMethod] = useState(initialJob.hasSavedCard ? "card" : "link");
   const [partDesc, setPartDesc] = useState("");
   const [partPrice, setPartPrice] = useState("");
+  // Outcome report: the SP's short write-up of the job. Kept on the booking as
+  // the record of work carried out and included in the customer's
+  // job-completed notification.
+  const [report, setReport] = useState(initialJob.outcomeReport || "");
   const [busy, setBusy] = useState("");
   const [err, setErr] = useState("");
   const [note, setNote] = useState("");
@@ -218,6 +222,14 @@ export function TakePaymentModal({ job: initialJob, data, onClose, onDone }) {
   const total = callout + parts + adminFee;
   const partsPending = !ber && job.partsApprovalStatus === "pending";
   const showCard = job.hasSavedCard && !cardFailed;
+  const REPORT_MIN = 20;
+  const reportOk = report.trim().length >= REPORT_MIN;
+  const blocked = partsPending || !reportOk;
+  const saveReport = async () => {
+    const { error } = await supabase.from("bookings")
+      .update({ outcome_report: report.trim(), outcome_report_at: new Date().toISOString() }).eq("id", job.id);
+    return error;
+  };
 
   const sendParts = async () => {
     const pence = poundsToPence(partPrice);
@@ -234,8 +246,11 @@ export function TakePaymentModal({ job: initialJob, data, onClose, onDone }) {
 
   const take = async (m) => {
     if (busy) return;
+    if (!reportOk) { setErr("Add an outcome report before taking payment."); return; }
     setBusy(m); setErr(""); setNote("");
     try {
+      const repErr = await saveReport();
+      if (repErr) throw new Error(`Couldn't save the outcome report: ${repErr.message}`);
       const res = await callPayments("take_payment", { bookingId: job.id, outcome, method: m });
       if (m === "card") {
         if (res.ok === false) { setCardFailed(true); setMethod("link"); setErr(`The saved card didn't go through (${String(res.reason || "declined").replace(/\.$/, "")}). Choose another way for the customer to pay.`); }
@@ -254,8 +269,10 @@ export function TakePaymentModal({ job: initialJob, data, onClose, onDone }) {
   // Before payments go live: customer pays the engineer directly, as now.
   const paidDirectly = async () => {
     if (busy) return;
+    if (!reportOk) { setErr("Add an outcome report before confirming payment."); return; }
     setBusy("direct"); setErr("");
     const { error } = await supabase.from("bookings").update({
+      outcome_report: report.trim(), outcome_report_at: new Date().toISOString(),
       payment_taken: true, payment_taken_at: new Date().toISOString(),
       status: outcome, completed_date: new Date().toISOString().slice(0, 10),
     }).eq("id", job.id);
@@ -316,6 +333,19 @@ export function TakePaymentModal({ job: initialJob, data, onClose, onDone }) {
               {choice(outcome === "Beyond Repair", "BER", () => setOutcome("Beyond Repair"), waiting)}
             </div>)}
 
+            {field("Outcome report", <>
+              <textarea className={inputCls} style={{ ...modalInputStyle, minHeight: 96, resize: "vertical" }} rows={4}
+                disabled={waiting} value={report} onChange={(e) => setReport(e.target.value)}
+                placeholder={ber
+                  ? "e.g. Diagnosed failed motor and control board. Parts cost more than the value of the machine, so it isn't economical to repair. Advised customer to replace."
+                  : "e.g. Drain pump blocked with debris and pump motor failing. Replaced drain pump, cleared filter and hose, ran a full test cycle with no leaks."} />
+              <p className="text-xs mt-1" style={{ color: reportOk || !report ? C.light : C.warn }}>
+                {ber ? "Explain what you found and why it's beyond economical repair. " : "Briefly explain the fault and the work you carried out. "}
+                This is kept as the record of the job and is <b style={{ color: C.text }}>sent to the customer</b> in their job-completed message, so keep it clear and professional.
+                {!reportOk && report.trim().length > 0 && ` (${REPORT_MIN - report.trim().length} more characters needed)`}
+              </p>
+            </>)}
+
             {!ber && (!waiting || job.partsLines?.length > 0) && field("Part costs", <>
               {(job.partsLines || []).map((l, i) => (
                 <div key={l.id || i} className="flex justify-between text-sm py-1" style={{ color: C.text }}>
@@ -337,24 +367,25 @@ export function TakePaymentModal({ job: initialJob, data, onClose, onDone }) {
             {field("Total", box(penceToGBP(total)))}
 
             {partsPending && <p className="text-sm mb-3" style={{ color: C.warn }}>The customer needs to approve the parts before you can take payment.</p>}
+            {!reportOk && !waiting && <p className="text-sm mb-3" style={{ color: C.warn }}>Add an outcome report above before taking payment.</p>}
 
             {!live && <>
               <p className="text-xs mb-2" style={{ color: C.light }}>Card payments through EasyRepair aren't switched on yet. Take payment from the customer as you do now, then confirm here.</p>
-              {big(busy === "direct" ? "Saving…" : `Customer has paid ${penceToGBP(total)}`, paidDirectly, !!busy || partsPending)}
+              {big(busy === "direct" ? "Saving…" : `Customer has paid ${penceToGBP(total)}`, paidDirectly, !!busy || blocked)}
             </>}
 
-            {live && showCard && big(busy === "card" ? "Processing…" : "Process payment", () => take("card"), !!busy || partsPending)}
+            {live && showCard && big(busy === "card" ? "Processing…" : "Process payment", () => take("card"), !!busy || blocked)}
 
             {live && !showCard && method === "link" && <>
-              {big(busy === "sms" ? "Sending…" : "Send payment link via text", () => take("sms"), !!busy || partsPending)}
-              {big(busy === "email" ? "Sending…" : "Send payment link via email", () => take("email"), !!busy || partsPending)}
+              {big(busy === "sms" ? "Sending…" : "Send payment link via text", () => take("sms"), !!busy || blocked)}
+              {big(busy === "email" ? "Sending…" : "Send payment link via email", () => take("email"), !!busy || blocked)}
             </>}
             {live && !showCard && method === "qr" && (qr
               ? <div className="flex flex-col items-center mb-3"><div className="rounded-lg p-3" style={{ background: "#fff" }} dangerouslySetInnerHTML={{ __html: qr }} /><p className="text-xs mt-2" style={{ color: C.mid }}>Ask the customer to scan this with their phone camera and pay {penceToGBP(total)}.</p></div>
-              : big(busy === "qr" ? "Creating…" : "Show QR code", () => take("qr"), !!busy || partsPending))}
+              : big(busy === "qr" ? "Creating…" : "Show QR code", () => take("qr"), !!busy || blocked))}
             {live && !showCard && method === "phone" && <>
               <p className="text-xs mb-2" style={{ color: C.light }}>Opens the secure Stripe payment page on your phone for the customer to enter their card. You never see their card details.</p>
-              {big(busy === "phone" ? "Opening…" : "Open payment page", () => take("phone"), !!busy || partsPending)}
+              {big(busy === "phone" ? "Opening…" : "Open payment page", () => take("phone"), !!busy || blocked)}
             </>}
 
             {waiting && <p className="text-sm mt-2 font-semibold" style={{ color: C.warn }}>Awaiting payment… This updates by itself when the customer pays. Please don't leave until it shows as paid.</p>}
