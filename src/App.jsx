@@ -125,6 +125,28 @@ function fmtDateTime(dt) {
   return d.toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
 }
 
+// Visits are booked as a half-day slot (AM / PM) rather than an exact time --
+// SPs can rarely promise a specific time. Older bookings may still hold an
+// "HH:MM" time, and website bookings can say "All day", so those still
+// display as-is. SLOT_SORT_TIME gives each slot a stand-in time purely so
+// the combined "YYYY-MM-DDTHH:MM" strings below keep sorting/parsing.
+const VISIT_SLOTS = ["AM", "PM"];
+const SLOT_SORT_TIME = { AM: "09:00", PM: "13:00", "All day": "08:00" };
+function normVisitTime(t) {
+  if (!t) return "";
+  return SLOT_SORT_TIME[t] ? t : String(t).slice(0, 5);
+}
+function slotSortTime(t) {
+  const n = normVisitTime(t);
+  return n ? (SLOT_SORT_TIME[n] || n) : "09:00";
+}
+function fmtVisit(dateOnly, time) {
+  if (!dateOnly) return "—";
+  const d = new Date(`${dateOnly}T12:00:00`).toLocaleDateString("en-GB", { weekday: "short", day: "2-digit", month: "short" });
+  const t = normVisitTime(time);
+  return t ? `${d} · ${t}` : d;
+}
+
 function fmtDateShort(dateStr) {
   if (!dateStr) return "—";
   const d = new Date(dateStr);
@@ -237,8 +259,8 @@ function mapBookingRow(row) {
     // modal's date/time inputs edit these two independently -- see
     // BookingDetailModal's own scheduledDate/scheduledTime state below.
     scheduledDateOnly: row.scheduled_date || "",
-    scheduledTimeOnly: row.scheduled_time || "",
-    scheduledDate: row.scheduled_date ? `${row.scheduled_date}T${row.scheduled_time || "09:00"}` : "",
+    scheduledTimeOnly: normVisitTime(row.scheduled_time),
+    scheduledDate: row.scheduled_date ? `${row.scheduled_date}T${slotSortTime(row.scheduled_time)}` : "",
     // `bookings.completed_date` is a date only (no time) -- fmtDateTime()
     // still renders it fine, just always shown at midnight.
     completedDate: row.completed_date || null,
@@ -259,8 +281,8 @@ function mapBookingRow(row) {
     // first visit (see 0009_return_visit.sql). Kept separate from
     // scheduled_date/scheduled_time so the original visit isn't overwritten.
     returnVisitDateOnly: row.return_visit_date || "",
-    returnVisitTimeOnly: row.return_visit_time ? String(row.return_visit_time).slice(0, 5) : "",
-    returnVisitDate: row.return_visit_date ? `${row.return_visit_date}T${row.return_visit_time ? String(row.return_visit_time).slice(0, 5) : "09:00"}` : "",
+    returnVisitTimeOnly: normVisitTime(row.return_visit_time),
+    returnVisitDate: row.return_visit_date ? `${row.return_visit_date}T${slotSortTime(row.return_visit_time)}` : "",
     // Stamped by a DB trigger whenever engineer_id is set/changed (see
     // 0003_decline_and_settings.sql) -- used to time out the Decline button
     // below once declineWindowMinutes has passed since this assignment.
@@ -848,8 +870,8 @@ function DashboardView({ currentUser, jobs, setActiveView }) {
             </p>
             <p className="text-sm" style={{ color: C.orange, opacity: 0.85 }}>
               {unscheduledJobs.length === 1
-                ? `Contact ${unscheduledJobs[0].customerName} to arrange a visit, then add the date and time to the booking.`
-                : `Contact these customers to arrange a visit, then add the date and time to each booking: ${unscheduledJobs.map((j) => j.customerName).join(", ")}.`}
+                ? `Contact ${unscheduledJobs[0].customerName} to arrange a visit, then add the date and AM or PM to the booking.`
+                : `Contact these customers to arrange a visit, then add the date and AM or PM to each booking: ${unscheduledJobs.map((j) => j.customerName).join(", ")}.`}
             </p>
           </div>
           <button onClick={() => setActiveView("bookings")} className="text-sm font-bold rounded-lg px-4 py-2 whitespace-nowrap" style={{ background: C.orange, color: "#1a0f00" }}>
@@ -892,7 +914,7 @@ function DashboardView({ currentUser, jobs, setActiveView }) {
           items: myJobs.filter((j) => j.status === "assigned").map((j) => ({
             key: j.id,
             title: `${j.customerName} — ${j.applianceType} (${j.brand})`,
-            sub: `${fmtDateTime(j.scheduledDate)} · ${j.address}`,
+            sub: `${fmtVisit(j.scheduledDateOnly, j.scheduledTimeOnly)} · ${j.address}`,
             right: <Pill bg={STATUS_STYLES[j.status].bg} color={STATUS_STYLES[j.status].t}>{j.status.replace("_", " ")}</Pill>,
             onClick: () => setActiveView("bookings"),
           })),
@@ -903,7 +925,7 @@ function DashboardView({ currentUser, jobs, setActiveView }) {
           items: myJobs.filter((j) => j.status === "in_progress").map((j) => ({
             key: j.id,
             title: `${j.customerName} — ${j.applianceType} (${j.brand})`,
-            sub: `${fmtDateTime(j.scheduledDate)} · ${j.address}`,
+            sub: `${fmtVisit(j.scheduledDateOnly, j.scheduledTimeOnly)} · ${j.address}`,
             right: <Pill bg={STATUS_STYLES[j.status].bg} color={STATUS_STYLES[j.status].t}>{j.status.replace("_", " ")}</Pill>,
             onClick: () => setActiveView("bookings"),
           })),
@@ -914,7 +936,7 @@ function DashboardView({ currentUser, jobs, setActiveView }) {
           items: myJobs.filter((j) => j.status === "parts_awaited").map((j) => ({
             key: j.id,
             title: `${j.customerName} — ${j.applianceType} (${j.brand})`,
-            sub: `${fmtDateTime(j.scheduledDate)} · ${j.address}`,
+            sub: `${fmtVisit(j.scheduledDateOnly, j.scheduledTimeOnly)} · ${j.address}`,
             right: <Pill bg={STATUS_STYLES[j.status].bg} color={STATUS_STYLES[j.status].t}>{j.status.replace("_", " ")}</Pill>,
             onClick: () => setActiveView("bookings"),
           })),
@@ -940,8 +962,8 @@ function DashboardView({ currentUser, jobs, setActiveView }) {
             <div>
               <p className="font-medium" style={{ color: C.text }}>{j.customerName} — {j.applianceType} ({j.brand})</p>
               {j.returnVisitDate && j.returnVisitDate.startsWith(todayStr())
-                ? <p className="text-sm" style={{ color: C.mid }}><span style={{ color: C.primary, fontWeight: 600 }}>Return visit</span> · {fmtDateTime(j.returnVisitDate)} · {j.address}</p>
-                : <p className="text-sm" style={{ color: C.mid }}>{fmtDateTime(j.scheduledDate)} · {j.address}</p>}
+                ? <p className="text-sm" style={{ color: C.mid }}><span style={{ color: C.primary, fontWeight: 600 }}>Return visit</span> · {fmtVisit(j.returnVisitDateOnly, j.returnVisitTimeOnly)} · {j.address}</p>
+                : <p className="text-sm" style={{ color: C.mid }}>{fmtVisit(j.scheduledDateOnly, j.scheduledTimeOnly)} · {j.address}</p>}
             </div>
             <Pill bg={STATUS_STYLES[j.status].bg} color={STATUS_STYLES[j.status].t}>{j.status.replace("_", " ")}</Pill>
           </div>
@@ -957,6 +979,26 @@ function DashboardView({ currentUser, jobs, setActiveView }) {
 /* ------------------------------------------------------------------ */
 /* Booking detail modal                                                 */
 /* ------------------------------------------------------------------ */
+
+// AM / PM picker for a visit. If the booking still holds an older exact time
+// (or "All day"), it stays listed so opening and saving doesn't wipe it.
+function VisitSlotSelect({ value, onChange, disabled }) {
+  const legacy = value && !VISIT_SLOTS.includes(value) ? value : null;
+  return (
+    <select
+      className={inputCls}
+      style={{ ...modalInputStyle, opacity: disabled ? 0.5 : 1 }}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      disabled={disabled}
+    >
+      <option value="">Select…</option>
+      <option value="AM">AM (morning)</option>
+      <option value="PM">PM (afternoon)</option>
+      {legacy && <option value={legacy}>{legacy}</option>}
+    </select>
+  );
+}
 
 // Opens when an engineer clicks a booking card in BookingsView. Shows the
 // full set of customer/job details FixFlow already has (nothing an admin
@@ -1026,7 +1068,8 @@ function BookingDetailModal({ job, onClose, onSaveDetails, currentUser, payData,
 
   async function save() {
     setErr("");
-    if (returnVisitDate && !returnVisitTime) { setErr("Please add a time for the return visit."); return; }
+    if (scheduledDate && !scheduledTime) { setErr("Please choose AM or PM for the visit."); return; }
+    if (returnVisitDate && !returnVisitTime) { setErr("Please choose AM or PM for the return visit."); return; }
     if (returnVisitDate && scheduledDate && returnVisitDate < scheduledDate) { setErr("The return visit can't be before the first visit."); return; }
     setSaving(true);
     try {
@@ -1082,8 +1125,8 @@ function BookingDetailModal({ job, onClose, onSaveDetails, currentUser, payData,
             <Field label="Scheduled date">
               <input type="date" className={inputCls} style={modalInputStyle} value={scheduledDate} onChange={(e) => setScheduledDate(e.target.value)} />
             </Field>
-            <Field label="Scheduled time">
-              <input type="time" className={inputCls} style={{ ...modalInputStyle, opacity: scheduledDate ? 1 : 0.5 }} value={scheduledTime} onChange={(e) => setScheduledTime(e.target.value)} disabled={!scheduledDate} />
+            <Field label="AM or PM">
+              <VisitSlotSelect value={scheduledTime} onChange={setScheduledTime} disabled={!scheduledDate} />
             </Field>
           </div>
           <label className="flex items-center gap-2 text-sm mb-2" style={{ color: C.text }}>
@@ -1099,13 +1142,13 @@ function BookingDetailModal({ job, onClose, onSaveDetails, currentUser, payData,
 
         <div className="pt-4 mt-4" style={{ borderTop: `1px solid ${C.border}` }}>
           <p className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: C.mid }}>Schedule Return Visit</p>
-          <p className="text-xs mb-3" style={{ color: C.light }}>Couldn't finish the job on the first visit? Arrange a return with the customer and add the date and time here.</p>
+          <p className="text-xs mb-3" style={{ color: C.light }}>Couldn't finish the job on the first visit? Arrange a return with the customer and add the date and AM or PM here.</p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-3">
             <Field label="Return date">
               <input type="date" className={inputCls} style={modalInputStyle} min={scheduledDate || undefined} value={returnVisitDate} onChange={(e) => { setReturnVisitDate(e.target.value); if (!e.target.value) setReturnVisitTime(""); }} />
             </Field>
-            <Field label="Return time">
-              <input type="time" className={inputCls} style={{ ...modalInputStyle, opacity: returnVisitDate ? 1 : 0.5 }} value={returnVisitTime} onChange={(e) => setReturnVisitTime(e.target.value)} disabled={!returnVisitDate} />
+            <Field label="AM or PM">
+              <VisitSlotSelect value={returnVisitTime} onChange={setReturnVisitTime} disabled={!returnVisitDate} />
             </Field>
           </div>
           {returnVisitDate && (
@@ -1318,9 +1361,9 @@ function BookingsView({ currentUser, jobs, onUpdateJob, onSaveJobDetails, onDecl
                   <p className="text-xs mt-1" style={{ color: C.light }}>
                     {!j.scheduledDate && !CLOSED_STATUSES.includes(j.status)
                       ? <span style={{ color: C.orange, fontWeight: 600 }}>Needs scheduling</span>
-                      : `Scheduled: ${fmtDateTime(j.scheduledDate)}`}
+                      : `Scheduled: ${fmtVisit(j.scheduledDateOnly, j.scheduledTimeOnly)}`}
                     {j.partsNeeded && <span style={{ color: C.warn }}> · Parts {j.partsOrdered ? "ordered" : "needed"}</span>}
-                    {j.returnVisitDate && <span style={{ color: C.primary, fontWeight: 600 }}> · Return visit: {fmtDateTime(j.returnVisitDate)}</span>}
+                    {j.returnVisitDate && <span style={{ color: C.primary, fontWeight: 600 }}> · Return visit: {fmtVisit(j.returnVisitDateOnly, j.returnVisitTimeOnly)}</span>}
                   </p>
                   <JobEarningsLine job={j} data={payData} />
                   {subTab === "active" && (
