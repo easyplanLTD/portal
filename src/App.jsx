@@ -132,6 +132,8 @@ function fmtDateTime(dt) {
 // the combined "YYYY-MM-DDTHH:MM" strings below keep sorting/parsing.
 const VISIT_SLOTS = ["AM", "PM"];
 const SLOT_SORT_TIME = { AM: "09:00", PM: "13:00", "All day": "08:00" };
+// What each slot means -- shown next to AM / PM everywhere.
+const SLOT_LABELS = { AM: "AM (8am–12pm)", PM: "PM (12pm–6:30pm)" };
 function normVisitTime(t) {
   if (!t) return "";
   return SLOT_SORT_TIME[t] ? t : String(t).slice(0, 5);
@@ -144,7 +146,7 @@ function fmtVisit(dateOnly, time) {
   if (!dateOnly) return "—";
   const d = new Date(`${dateOnly}T12:00:00`).toLocaleDateString("en-GB", { weekday: "short", day: "2-digit", month: "short" });
   const t = normVisitTime(time);
-  return t ? `${d} · ${t}` : d;
+  return t ? `${d} · ${SLOT_LABELS[t] || t}` : d;
 }
 
 function fmtDateShort(dateStr) {
@@ -993,8 +995,8 @@ function VisitSlotSelect({ value, onChange, disabled }) {
       disabled={disabled}
     >
       <option value="">Select…</option>
-      <option value="AM">AM (morning)</option>
-      <option value="PM">PM (afternoon)</option>
+      <option value="AM">{SLOT_LABELS.AM}</option>
+      <option value="PM">{SLOT_LABELS.PM}</option>
       {legacy && <option value={legacy}>{legacy}</option>}
     </select>
   );
