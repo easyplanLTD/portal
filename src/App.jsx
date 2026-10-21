@@ -266,6 +266,9 @@ function mapBookingRow(row) {
     // `bookings.completed_date` is a date only (no time) -- fmtDateTime()
     // still renders it fine, just always shown at midnight.
     completedDate: row.completed_date || null,
+    // SP's write-up of the job, entered in Take payment (20261021_outcome_report.sql).
+    outcomeReport: row.outcome_report || "",
+    outcomeReportAt: row.outcome_report_at || null,
     engineerId: row.engineer_id,
     status: STATUS_ROW_TO_PORTAL[row.status] || "unassigned",
     priority: (row.priority || "Normal").toLowerCase(),
@@ -1093,6 +1096,7 @@ function BookingDetailModal({ job, onClose, onSaveDetails, currentUser, payData,
     ["Preferred visit date and time", job.preferredCallTime],
     ["Fault reported", job.faultDescription],
     ["Notes", job.notes],
+    ["Outcome report", job.outcomeReport],
   ].filter(([, value]) => !!value);
 
   return (
