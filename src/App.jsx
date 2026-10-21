@@ -1045,7 +1045,7 @@ function BookingDetailModal({ job, onClose, onSaveDetails, currentUser, payData,
     ["Email", job.email],
     ["Appliance age", job.applianceAge],
     ["Priority", job.priority],
-    ["Preferred call time", job.preferredCallTime],
+    ["Preferred visit date and time", job.preferredCallTime],
     ["Fault reported", job.faultDescription],
     ["Notes", job.notes],
   ].filter(([, value]) => !!value);
