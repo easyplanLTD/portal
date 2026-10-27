@@ -1412,13 +1412,6 @@ function BookingsView({ currentUser, jobs, onUpdateJob, onSaveJobDetails, onDecl
         <>
           <ExportPaymentsBar currentUser={currentUser} jobs={jobs} data={payData} />
           {payData && <EarningsPanel currentUser={currentUser} jobs={jobs} data={payData} onOpenJob={(j) => setSelectedJobId(j.id)} />}
-          {/* Old per-job pay from EasyRepair -- only for jobs not paid through Stripe. */}
-          {jobs.some((j) => j.engineerId === currentUser.engineerRowId && j.status === "completed" && !isStripeJob(j)) && (
-            <>
-              <h2 className="text-lg font-semibold mb-3" style={{ color: C.text }}>Pay from EasyRepair</h2>
-              <PaymentsView currentUser={currentUser} jobs={jobs.filter((j) => !isStripeJob(j))} showTitle={false} />
-            </>
-          )}
         </>
       )}
 
@@ -1471,53 +1464,6 @@ function BookingsView({ currentUser, jobs, onUpdateJob, onSaveJobDetails, onDecl
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/* Payments                                                             */
-/* ------------------------------------------------------------------ */
-
-// showTitle=false when this renders inside the Bookings > Payments tab,
-// where the tab bar's own page title above already says "Payments" -- a
-// second "Payments" heading right under it would just be noise.
-function PaymentsView({ currentUser, jobs, showTitle = true }) {
-  const completedJobs = jobs.filter((j) => j.engineerId === currentUser.engineerRowId && j.status === "completed");
-  const unpaidJobs = completedJobs.filter((j) => !j.paid);
-  const jobEarnings = completedJobs.reduce((s, j) => s + currentUser.payRate, 0);
-
-  return (
-    <div>
-      {showTitle && <h1 className="text-2xl font-bold mb-6" style={{ color: C.text }}>Payments</h1>}
-
-      <div className="grid grid-cols-2 gap-4 mb-6">
-        <div className="rounded-xl p-5" style={{ background: C.card, borderLeft: `4px solid ${C.primary}` }}>
-          <p className="text-sm" style={{ color: C.mid }}>Earnings (completed)</p>
-          <p className="text-2xl font-bold" style={{ color: C.text }}>{fmtMoney(jobEarnings)}</p>
-        </div>
-        <div className="rounded-xl p-5" style={{ background: C.card, borderLeft: `4px solid ${C.warn}` }}>
-          <p className="text-sm" style={{ color: C.mid }}>Unpaid bookings</p>
-          <p className="text-2xl font-bold" style={{ color: C.warn }}>{unpaidJobs.length}</p>
-        </div>
-      </div>
-
-      <h2 className="text-lg font-semibold mb-3" style={{ color: C.text }}>Completed bookings</h2>
-      <div className="rounded-xl" style={{ background: C.card, border: `1px solid ${C.border}` }}>
-        {completedJobs.length === 0 && <p className="p-4 text-sm" style={{ color: C.mid }}>No completed bookings yet.</p>}
-        {completedJobs.map((j, i) => (
-          <div key={j.id} className="p-4 flex items-center justify-between" style={{ borderTop: i > 0 ? `1px solid ${C.border}` : "none" }}>
-            <div>
-              <p className="font-medium" style={{ color: C.text }}>{j.customerName} — {j.applianceType}</p>
-              <p className="text-sm" style={{ color: C.mid }}>Completed {fmtDateTime(j.completedDate)}</p>
-            </div>
-            <div className="text-right">
-              <p className="font-semibold" style={{ color: C.text }}>{fmtMoney(currentUser.payRate)}</p>
-              <Pill bg={j.paid ? C.successSoft : C.warnSoft} color={j.paid ? C.success : C.warn}>{j.paid ? "Paid" : "Unpaid"}</Pill>
-            </div>
-          </div>
-        ))}
-      </div>
     </div>
   );
 }
