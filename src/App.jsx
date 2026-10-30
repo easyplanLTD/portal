@@ -253,7 +253,11 @@ function mapBookingRow(row) {
     applianceType: row.appliance,
     brand: row.brand || "",
     applianceAge: row.appliance_age_label || (row.appliance_age != null ? `${row.appliance_age} years` : ""),
-    isIntegrated: false, // not tracked in `bookings` yet
+    isIntegrated: row.installation_type === "Built-in",
+    // Asked on the website booking form (0024). Gas / Dual fuel / Not sure
+    // jobs are only auto-assigned to Gas Safe registered engineers.
+    fuelType: row.fuel_type || "",
+    installationType: row.installation_type || "",
     faultDescription: row.issue || "",
     notes: row.notes || "",
     preferredCallTime: row.preferred_call_time || "",
@@ -1092,6 +1096,8 @@ function BookingDetailModal({ job, onClose, onSaveDetails, currentUser, payData,
     ["Phone", job.phone],
     ["Email", job.email],
     ["Appliance age", job.applianceAge],
+    ["Gas or electric", job.fuelType],
+    ["Built-in or freestanding", job.installationType],
     ["Priority", job.priority],
     ["Preferred visit date and time", job.preferredCallTime],
     ["Fault reported", job.faultDescription],
