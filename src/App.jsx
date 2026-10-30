@@ -36,7 +36,8 @@ if (typeof document !== "undefined" && !window.__erPickerListener) {
   });
 }
 
-const APPLIANCE_TYPES = ["Washing Machine", "Fridge/Freezer", "Dishwasher", "Oven/Cooker", "Tumble Dryer", "Hob", "Microwave"];
+// Same names and order as the website booking form and FixFlow (split 30 Oct 2026).
+const APPLIANCE_TYPES = ["Washing Machine", "Dishwasher", "Tumble Dryer", "Fridge/Freezer", "Freezer", "Microwave", "Oven", "Hob", "Cooker"];
 const BRANDS = ["Bosch", "Samsung", "LG", "Hotpoint", "Beko", "Zanussi", "Whirlpool", "Indesit", "AEG", "Miele"];
 
 const todayStr = () => new Date().toISOString().slice(0, 10);
