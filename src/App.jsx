@@ -166,20 +166,114 @@ function insuranceExpiryStatus(dateStr) {
   return { label: `Expires ${fmtDateShort(dateStr)}`, color: C.mid };
 }
 
+// Same colours as the admin panel's STATUS_C, so a status looks the same in
+// both apps. "scheduled" and "awaiting_payment" are display-only (see
+// displayStatus below) -- they're never saved.
 const STATUS_STYLES = {
   unassigned: { bg: C.warnSoft, t: C.warn },
   assigned: { bg: C.primarySoft, t: C.primary },
-  parts_awaited: { bg: C.warnSoft, t: C.warn },
+  scheduled: { bg: "rgba(45,212,191,0.15)", t: "#2dd4bf" },
+  parts_awaited: { bg: C.purpleSoft, t: C.purple },
   in_progress: { bg: C.orangeSoft, t: C.orange },
+  awaiting_payment: { bg: "rgba(244,114,182,0.15)", t: "#f472b6" },
   completed: { bg: C.successSoft, t: C.success },
   beyond_repair: { bg: C.successSoft, t: C.success }, // shown as "Completed: BER", green like completed
-  cancelled: { bg: "rgba(255,255,255,0.06)", t: C.mid },
+  cancelled: { bg: "rgba(239,68,68,0.15)", t: "#ef4444" },
 };
-// Display text for a Portal status key. "beyond_repair" (DB value "Beyond
-// Repair") is shown as "Completed: BER" (Beyond Economical Repair); the
-// stored value itself is unchanged.
-const STATUS_LABELS = { beyond_repair: "Completed: BER" };
+// Display text for a Portal status key, worded as in the admin panel.
+// "beyond_repair" (DB value "Beyond Repair") is shown as "Completed: BER"
+// (Beyond Economical Repair); the stored value itself is unchanged.
+const STATUS_LABELS = {
+  unassigned: "Booked",
+  assigned: "Assigned",
+  scheduled: "Scheduled",
+  parts_awaited: "Parts Awaited",
+  in_progress: "In Progress",
+  awaiting_payment: "Awaiting Payment",
+  completed: "Completed",
+  beyond_repair: "Completed: BER",
+  cancelled: "Cancelled",
+};
 const statusLabel = (s) => STATUS_LABELS[s] || String(s || "").replace("_", " ");
+
+// What a job is shown as -- the same rules as the admin panel's
+// displayStatus(), so the Portal and the admin panel always agree:
+//  - Awaiting Payment: a payment link has been sent and the customer hasn't
+//    paid yet (isAwaitingPayment). The job completes by itself once paid.
+//  - In Progress: an Assigned job whose visit slot has started (8am for AM,
+//    12pm for PM, in the browser's UK time). A job saved as In Progress
+//    (Mark In Progress) shows as In Progress anyway.
+//  - Scheduled: an Assigned job with a visit date that hasn't started yet.
+// Display only: the saved status stays as it was (usually "assigned").
+const SLOT_START = { AM: "08:00", PM: "12:00", "All day": "08:00" };
+function visitStarted(j, now = new Date()) {
+  if (!j.scheduledDateOnly) return false;
+  const raw = String(j.scheduledTimeOnly || "");
+  const m = SLOT_START[raw] ? SLOT_START[raw].split(":") : raw.match(/^(\d{1,2}):(\d{2})/)?.slice(1) || ["08", "00"];
+  const [y, mo, d] = j.scheduledDateOnly.slice(0, 10).split("-").map(Number);
+  if (!y || !mo || !d) return false;
+  return now >= new Date(y, mo - 1, d, Number(m[0]), Number(m[1]));
+}
+function displayStatus(j) {
+  if (isAwaitingPayment(j)) return "awaiting_payment";
+  if (j.status === "assigned" && j.scheduledDateOnly) return visitStarted(j) ? "in_progress" : "scheduled";
+  return j.status;
+}
+function StatusPill({ job }) {
+  const k = displayStatus(job);
+  const st = STATUS_STYLES[k] || STATUS_STYLES.assigned;
+  return <Pill bg={st.bg} color={st.t}>{statusLabel(k)}</Pill>;
+}
+
+// The admin panel's six-step progress bar (JobStepper), worked out from
+// what's on the booking rather than status alone: Booked -> Assigned ->
+// Scheduled -> In Progress -> Awaiting Payment -> Completed. In Progress also
+// covers Parts Awaited (and is labelled that way when it applies).
+const JOB_STEPS = ["Booked", "Assigned", "Scheduled", "In Progress", "Awaiting Payment", "Completed"];
+function jobStep(job) {
+  if (job.status === "completed" || job.status === "beyond_repair") return 6;
+  if (isAwaitingPayment(job)) return 5;
+  if (job.status === "in_progress" || job.status === "parts_awaited") return 4;
+  if (job.scheduledDateOnly && visitStarted(job)) return 4;
+  if (job.scheduledDateOnly) return 3;
+  if (job.engineerId) return 2;
+  return 1;
+}
+function JobStepper({ job }) {
+  const cancelled = job.status === "cancelled";
+  const step = jobStep(job);
+  const n = JOB_STEPS.length;
+  const done = step === n;
+  const ber = job.status === "beyond_repair";
+  const stepName = (i) => (i === n - 1 && ber ? "Completed: BER" : i === 3 && job.status === "parts_awaited" ? "Parts Awaited" : JOB_STEPS[i]);
+  const paid = job.paymentStatus === "paid" || job.paymentTaken;
+  const sub = cancelled ? `Cancelled at ${stepName(step - 1)}`
+    : done ? (paid ? "Paid" : "Awaiting payment")
+    : isAwaitingPayment(job) ? "Completes once paid"
+    : step === 4 && job.status === "parts_awaited" ? "Waiting on parts"
+    : `Next: ${stepName(step)}`;
+  const on = cancelled ? C.light : done ? C.success : C.primary;
+  return (
+    <div className="mb-4">
+      <div className="flex justify-between items-baseline gap-2 mb-1.5">
+        <p className="text-sm font-bold" style={{ color: cancelled ? C.light : C.text, textDecoration: cancelled ? "line-through" : "none" }}>
+          Step {step} of {n}<span className="ml-1.5" style={{ color: on }}>{stepName(step - 1)}</span>
+        </p>
+        <p className="text-xs font-semibold" style={{ color: cancelled ? "#ef4444" : done && !paid ? C.warn : C.mid }}>{sub}</p>
+      </div>
+      <div className="flex gap-[3px]" role="progressbar" aria-valuemin={0} aria-valuemax={n} aria-valuenow={step} aria-label={`Step ${step} of ${n}`}>
+        {JOB_STEPS.map((l, i) => (
+          <div key={l} title={l} className="flex-1 rounded" style={{ height: 5, background: i < step ? on : "rgba(255,255,255,0.09)", boxShadow: i === step - 1 && !done && !cancelled ? `0 0 8px ${C.primary}` : "none" }} />
+        ))}
+      </div>
+      <div className="flex gap-[3px] mt-1">
+        {JOB_STEPS.map((l, i) => (
+          <div key={l} className="flex-1" style={{ fontSize: 9.5, lineHeight: 1.2, color: i < step ? (cancelled ? C.light : C.mid) : "#555", fontWeight: i === step - 1 ? 800 : 500 }}>{stepName(i)}</div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 const PRIORITY_STYLES = {
   normal: { bg: "rgba(255,255,255,0.06)", t: C.mid },
@@ -927,22 +1021,22 @@ function DashboardView({ currentUser, jobs, setActiveView }) {
         {
           key: "new",
           label: "New Bookings",
-          items: myJobs.filter((j) => j.status === "assigned").map((j) => ({
+          items: myJobs.filter((j) => ["assigned", "scheduled"].includes(displayStatus(j))).map((j) => ({
             key: j.id,
             title: `${j.customerName} — ${j.applianceType} (${j.brand})`,
             sub: `${fmtVisit(j.scheduledDateOnly, j.scheduledTimeOnly)} · ${j.address}`,
-            right: <Pill bg={STATUS_STYLES[j.status].bg} color={STATUS_STYLES[j.status].t}>{statusLabel(j.status)}</Pill>,
+            right: <StatusPill job={j} />,
             onClick: () => setActiveView("bookings"),
           })),
         },
         {
           key: "in_progress",
           label: "In Progress",
-          items: myJobs.filter((j) => j.status === "in_progress").map((j) => ({
+          items: myJobs.filter((j) => displayStatus(j) === "in_progress").map((j) => ({
             key: j.id,
             title: `${j.customerName} — ${j.applianceType} (${j.brand})`,
             sub: `${fmtVisit(j.scheduledDateOnly, j.scheduledTimeOnly)} · ${j.address}`,
-            right: <Pill bg={STATUS_STYLES[j.status].bg} color={STATUS_STYLES[j.status].t}>{statusLabel(j.status)}</Pill>,
+            right: <StatusPill job={j} />,
             onClick: () => setActiveView("bookings"),
           })),
         },
@@ -953,7 +1047,7 @@ function DashboardView({ currentUser, jobs, setActiveView }) {
             key: j.id,
             title: `${j.customerName} — ${j.applianceType} (${j.brand})`,
             sub: `${fmtVisit(j.scheduledDateOnly, j.scheduledTimeOnly)} · ${j.address}`,
-            right: <Pill bg={STATUS_STYLES[j.status].bg} color={STATUS_STYLES[j.status].t}>{statusLabel(j.status)}</Pill>,
+            right: <StatusPill job={j} />,
             onClick: () => setActiveView("bookings"),
           })),
         },
@@ -981,7 +1075,7 @@ function DashboardView({ currentUser, jobs, setActiveView }) {
                 ? <p className="text-sm" style={{ color: C.mid }}><span style={{ color: C.primary, fontWeight: 600 }}>Return visit</span> · {fmtVisit(j.returnVisitDateOnly, j.returnVisitTimeOnly)} · {j.address}</p>
                 : <p className="text-sm" style={{ color: C.mid }}>{fmtVisit(j.scheduledDateOnly, j.scheduledTimeOnly)} · {j.address}</p>}
             </div>
-            <Pill bg={STATUS_STYLES[j.status].bg} color={STATUS_STYLES[j.status].t}>{statusLabel(j.status)}</Pill>
+            <StatusPill job={j} />
           </div>
         ))}
       </div>
@@ -1127,10 +1221,12 @@ function BookingDetailModal({ job, onClose, onSaveDetails, currentUser, payData,
         <div className="flex items-start justify-between mb-4 gap-3">
           <div>
             <h2 className="text-lg font-bold" style={{ color: C.text }}>{job.customerName} — {job.applianceType} ({job.brand})</h2>
-            <div className="mt-1"><Pill bg={STATUS_STYLES[job.status].bg} color={STATUS_STYLES[job.status].t}>{statusLabel(job.status)}</Pill></div>
+            <div className="mt-1"><StatusPill job={job} /></div>
           </div>
           <button onClick={onClose} aria-label="Close" className="text-lg leading-none" style={{ color: C.mid, background: "none", border: "none", cursor: "pointer" }}>✕</button>
         </div>
+
+        <JobStepper job={job} />
 
         <div className="space-y-1.5 text-sm mb-5">
           {detailRows.map(([label, value]) => (
@@ -1374,7 +1470,7 @@ function BookingsView({ currentUser, jobs, onUpdateJob, onSaveJobDetails, onDecl
                 >
                   <div className="flex items-start justify-between mb-1">
                     <p className="font-medium" style={{ color: C.text }}>{j.customerName} — {j.applianceType} ({j.brand})</p>
-                    <Pill bg={STATUS_STYLES[j.status].bg} color={STATUS_STYLES[j.status].t}>{statusLabel(j.status)}</Pill>
+                    <StatusPill job={j} />
                   </div>
                   <p className="text-sm" style={{ color: C.mid }}>{j.address}{j.phone && <> · <CallLink phone={j.phone} stopPropagation /></>}</p>
                   <p className="text-sm" style={{ color: C.mid }}>{j.faultDescription}</p>
@@ -1406,10 +1502,9 @@ function BookingsView({ currentUser, jobs, onUpdateJob, onSaveJobDetails, onDecl
                       ) : (
                         <>
                           {/* Scheduled: work the job, then Take Payment completes it. */}
-                          {j.status !== "in_progress" && !isAwaitingPayment(j) && (
+                          {displayStatus(j) !== "in_progress" && !isAwaitingPayment(j) && (
                             <button onClick={() => onUpdateJob({ ...j, status: "in_progress" })} className="px-3 py-1.5 rounded-lg text-xs font-semibold" style={{ background: C.orangeSoft, color: C.orange }}>Mark In Progress</button>
                           )}
-                          {isAwaitingPayment(j) && <Pill bg={C.warnSoft} color={C.warn}>Awaiting payment</Pill>}
                           <button onClick={() => setTakePaymentJobId(j.id)} className="px-4 py-1.5 rounded-lg text-xs font-bold" style={{ background: C.primary, color: "#000" }}>Take Payment</button>
                         </>
                       )}
@@ -1500,7 +1595,7 @@ const PLANNER_SLOTS = [
   { key: "AM", hours: "8am – 12pm" },
   { key: "PM", hours: "12pm – 6:30pm" },
 ];
-const RETURN_STYLE = { bg: C.purpleSoft, t: C.purple };
+const RETURN_STYLE = { bg: "rgba(96,165,250,0.15)", t: "#60a5fa" };
 const plKey = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 const plAdd = (d, n) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
 const plMonday = (d) => plAdd(d, -((d.getDay() + 6) % 7));
@@ -1532,9 +1627,9 @@ function PlannerView({ jobs, currentUser, onOpenJob }) {
   const visitsOn = (key) => byDay[key] || [];
   const unscheduled = jobs.filter((j) => !CLOSED_STATUSES.includes(j.status) && !j.scheduledDate);
 
-  const styleOf = (e) => (e.isReturn ? RETURN_STYLE : STATUS_STYLES[e.job.status] || STATUS_STYLES.assigned);
-  // A visit on the planner already has a date, so "assigned" reads as "Scheduled" here.
-  const labelOf = (e) => (e.isReturn ? "Return visit" : e.job.status === "assigned" ? "Scheduled" : statusLabel(e.job.status));
+  // Same status as everywhere else (displayStatus). A return visit is its own card.
+  const styleOf = (e) => (e.isReturn ? RETURN_STYLE : STATUS_STYLES[displayStatus(e.job)] || STATUS_STYLES.assigned);
+  const labelOf = (e) => (e.isReturn ? "Return visit" : statusLabel(displayStatus(e.job)));
   const countLabel = (n) => `${n} ${n === 1 ? "visit" : "visits"}`;
 
   const monday = plMonday(anchor);
@@ -1561,7 +1656,7 @@ function PlannerView({ jobs, currentUser, onOpenJob }) {
   const busiest = week.reduce((best, d) => (visitsOn(plKey(d)).length > visitsOn(plKey(best)).length ? d : best), week[0]);
   const stats = [
     { label: "Visits this week", value: weekVisits.length, sub: `${weekVisits.filter((e) => CLOSED_STATUSES.includes(e.job.status)).length} completed`, color: C.text },
-    { label: "Return visits", value: weekVisits.filter((e) => e.isReturn).length, sub: "Included in the count", color: C.purple },
+    { label: "Return visits", value: weekVisits.filter((e) => e.isReturn).length, sub: "Included in the count", color: RETURN_STYLE.t },
     { label: "Busiest day", value: visitsOn(plKey(busiest)).length ? fmtD(busiest, { weekday: "short", day: "numeric" }) : "—", sub: visitsOn(plKey(busiest)).length ? countLabel(visitsOn(plKey(busiest)).length) : "Nothing booked", color: C.primary },
     { label: "Needs scheduling", value: unscheduled.length, sub: "Assigned, no visit date yet", color: C.orange },
   ];
@@ -1793,7 +1888,7 @@ function PlannerView({ jobs, currentUser, onOpenJob }) {
 
           {/* Legend */}
           <div className="flex flex-wrap gap-x-4 gap-y-1 mt-3 text-xs" style={{ color: C.mid }}>
-            {[["assigned", "Scheduled"], ["parts_awaited", "Parts awaited"], ["in_progress", "In progress"], ["completed", "Completed"]].map(([k, l]) => (
+            {["scheduled", "in_progress", "parts_awaited", "awaiting_payment", "completed"].map((k) => [k, statusLabel(k)]).map(([k, l]) => (
               <span key={k} className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm" style={{ background: STATUS_STYLES[k].bg, border: `1px solid ${STATUS_STYLES[k].t}` }} />{l}</span>
             ))}
             <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm" style={{ background: RETURN_STYLE.bg, border: `1px solid ${RETURN_STYLE.t}` }} />Return visit</span>
