@@ -1533,7 +1533,8 @@ function PlannerView({ jobs, currentUser, onOpenJob }) {
   const unscheduled = jobs.filter((j) => !CLOSED_STATUSES.includes(j.status) && !j.scheduledDate);
 
   const styleOf = (e) => (e.isReturn ? RETURN_STYLE : STATUS_STYLES[e.job.status] || STATUS_STYLES.assigned);
-  const labelOf = (e) => (e.isReturn ? "Return visit" : statusLabel(e.job.status));
+  // A visit on the planner already has a date, so "assigned" reads as "Scheduled" here.
+  const labelOf = (e) => (e.isReturn ? "Return visit" : e.job.status === "assigned" ? "Scheduled" : statusLabel(e.job.status));
   const countLabel = (n) => `${n} ${n === 1 ? "visit" : "visits"}`;
 
   const monday = plMonday(anchor);
@@ -1792,7 +1793,7 @@ function PlannerView({ jobs, currentUser, onOpenJob }) {
 
           {/* Legend */}
           <div className="flex flex-wrap gap-x-4 gap-y-1 mt-3 text-xs" style={{ color: C.mid }}>
-            {[["assigned", "Assigned"], ["parts_awaited", "Parts awaited"], ["in_progress", "In progress"], ["completed", "Completed"]].map(([k, l]) => (
+            {[["assigned", "Scheduled"], ["parts_awaited", "Parts awaited"], ["in_progress", "In progress"], ["completed", "Completed"]].map(([k, l]) => (
               <span key={k} className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm" style={{ background: STATUS_STYLES[k].bg, border: `1px solid ${STATUS_STYLES[k].t}` }} />{l}</span>
             ))}
             <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm" style={{ background: RETURN_STYLE.bg, border: `1px solid ${RETURN_STYLE.t}` }} />Return visit</span>
