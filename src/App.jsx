@@ -1746,9 +1746,9 @@ function PlannerView({ jobs, currentUser, onOpenJob }) {
 
           {view === "month" && (
             <div className="rounded-xl overflow-x-auto" style={{ background: "#0b0b0b", border: `1px solid ${C.border}` }}>
-              <div style={{ minWidth: 640 }}>
+              <div className="md:min-w-[640px]">
                 <div className="grid grid-cols-7" style={{ borderBottom: `1px solid ${C.border}` }}>
-                  {PLANNER_DOW.map((w) => <div key={w} className="px-2.5 py-2 text-xs" style={{ color: C.mid }}>{w}</div>)}
+                  {PLANNER_DOW.map((w) => <div key={w} className="px-1 md:px-2.5 py-2 text-xs text-center md:text-left" style={{ color: C.mid }}>{w}</div>)}
                 </div>
                 <div className="grid grid-cols-7">
                   {monthCells.map((d) => {
@@ -1762,25 +1762,26 @@ function PlannerView({ jobs, currentUser, onOpenJob }) {
                       <button
                         key={key}
                         onClick={() => openWeekOf(d)}
-                        className="text-left p-2 flex flex-col gap-1"
-                        style={{ minHeight: 104, opacity: inMonth ? 1 : 0.35, background: list.length >= 4 ? "#121705" : "transparent", borderRight: "1px solid #1e1e1e", borderBottom: "1px solid #1e1e1e", color: C.text }}
+                        className="text-left p-1 md:p-2 flex flex-col items-center md:items-stretch gap-1 min-h-[64px] md:min-h-[104px] min-w-0"
+                        style={{ opacity: inMonth ? 1 : 0.35, background: list.length >= 4 ? "#121705" : "transparent", borderRight: "1px solid #1e1e1e", borderBottom: "1px solid #1e1e1e", color: C.text }}
                       >
-                        <div className="flex items-center justify-between w-full">
+                        <div className="flex flex-col md:flex-row items-center md:justify-between gap-1 w-full">
                           <span className="w-6 h-6 rounded-full flex items-center justify-center text-sm font-semibold" style={{ background: isT ? C.primary : "transparent", color: isT ? "#000" : C.text }}>{d.getDate()}</span>
                           {list.length > 0 && (
                             <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full" style={{ background: list.length >= 4 ? C.primary : C.border, color: list.length >= 4 ? "#000" : C.text }}>{list.length}</span>
                           )}
                         </div>
-                        {off && <span className="text-[10px] rounded px-1 py-0.5" style={{ border: `1px dashed ${off.color === C.warn ? C.warn : "#3a3a3a"}`, color: off.color }}>{off.label}</span>}
-                        {list.length > 0 && <span className="text-[11px]" style={{ color: C.mid }}>{am} AM · {list.length - am} PM</span>}
+                        {off && <span className="md:hidden text-[9px]" style={{ color: off.color }}>Off</span>}
+                        {off && <span className="hidden md:inline text-[10px] rounded px-1 py-0.5" style={{ border: `1px dashed ${off.color === C.warn ? C.warn : "#3a3a3a"}`, color: off.color }}>{off.label}</span>}
+                        {list.length > 0 && <span className="hidden md:inline text-[11px]" style={{ color: C.mid }}>{am} AM · {list.length - am} PM</span>}
                         {list.slice(0, 2).map((e) => (
-                          <span key={`${e.job.id}-${e.isReturn}`} className="flex items-center gap-1 text-[11px] w-full overflow-hidden whitespace-nowrap">
+                          <span key={`${e.job.id}-${e.isReturn}`} className="hidden md:flex items-center gap-1 text-[11px] w-full overflow-hidden whitespace-nowrap">
                             <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: styleOf(e).t }} />
                             <span style={{ color: C.mid }}>{e.slot}</span>
                             <span className="truncate">{e.job.applianceType}</span>
                           </span>
                         ))}
-                        {list.length > 2 && <span className="text-[11px]" style={{ color: C.mid }}>+{list.length - 2} more</span>}
+                        {list.length > 2 && <span className="hidden md:inline text-[11px]" style={{ color: C.mid }}>+{list.length - 2} more</span>}
                       </button>
                     );
                   })}
