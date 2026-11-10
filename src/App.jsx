@@ -1264,6 +1264,7 @@ function BookingsView({ currentUser, jobs, onUpdateJob, onSaveJobDetails, onDecl
 
   const tabs = [
     { key: "bookings", label: "Bookings" },
+    { key: "planner", label: "Planner" },
     { key: "payments", label: "Payments" },
   ];
   const pageTitle = tabs.find((t) => t.key === tab)?.label || "Bookings";
@@ -1421,6 +1422,10 @@ function BookingsView({ currentUser, jobs, onUpdateJob, onSaveJobDetails, onDecl
         </>
       )}
 
+      {tab === "planner" && (
+        <PlannerView jobs={myJobs} currentUser={currentUser} onOpenJob={(j) => setSelectedJobId(j.id)} />
+      )}
+
       {tab === "payments" && (
         <>
           <ExportPaymentsBar currentUser={currentUser} jobs={jobs} data={payData} />
@@ -1477,6 +1482,349 @@ function BookingsView({ currentUser, jobs, onUpdateJob, onSaveJobDetails, onDecl
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Planner (Bookings > Planner tab)                                     */
+/* ------------------------------------------------------------------ */
+
+// Week / month view of the SP's own visits, built purely from data the
+// Portal already loads: each booking's scheduled_date/scheduled_time
+// (AM / PM slot) plus its return_visit_date/return_visit_time, the SP's
+// working_hours (days marked "Day off") and time off. Clicking a visit
+// opens the same BookingDetailModal as the Bookings list. No DB changes.
+const PLANNER_DOW = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const PLANNER_SLOTS = [
+  { key: "AM", hours: "8am – 12pm" },
+  { key: "PM", hours: "12pm – 6:30pm" },
+];
+const RETURN_STYLE = { bg: C.purpleSoft, t: C.purple };
+const plKey = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+const plAdd = (d, n) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
+const plMonday = (d) => plAdd(d, -((d.getDay() + 6) % 7));
+// Visits are booked as AM / PM. Older rows may hold a clock time ("10:30")
+// or "All day" -- file those under the slot they fall in.
+function plSlot(t) {
+  if (t === "PM") return "PM";
+  if (!t || t === "AM" || t === "All day") return "AM";
+  return parseInt(String(t).slice(0, 2), 10) >= 12 ? "PM" : "AM";
+}
+
+function PlannerView({ jobs, currentUser, onOpenJob }) {
+  const [view, setView] = useState("week");
+  const [anchor, setAnchor] = useState(() => new Date());
+  const [pickedDay, setPickedDay] = useState(() => plKey(new Date()));
+
+  const todayKey = plKey(new Date());
+  const hours = currentUser.workingHours || {};
+  const dayOffFor = (d) => !!hours[DAYS[(d.getDay() + 6) % 7][0]]?.off;
+  const timeOffFor = (key) => (currentUser.timeOff || []).find((t) => t.startDate <= key && key <= (t.endDate || t.startDate) && t.status !== "rejected");
+
+  // One entry per visit: the first visit and (if booked) the return visit.
+  const byDay = {};
+  const add = (key, entry) => { (byDay[key] = byDay[key] || []).push(entry); };
+  jobs.filter((j) => j.status !== "cancelled").forEach((j) => {
+    if (j.scheduledDateOnly) add(j.scheduledDateOnly, { job: j, slot: plSlot(j.scheduledTimeOnly), isReturn: false });
+    if (j.returnVisitDateOnly) add(j.returnVisitDateOnly, { job: j, slot: plSlot(j.returnVisitTimeOnly), isReturn: true });
+  });
+  const visitsOn = (key) => byDay[key] || [];
+  const unscheduled = jobs.filter((j) => !CLOSED_STATUSES.includes(j.status) && !j.scheduledDate);
+
+  const styleOf = (e) => (e.isReturn ? RETURN_STYLE : STATUS_STYLES[e.job.status] || STATUS_STYLES.assigned);
+  const labelOf = (e) => (e.isReturn ? "Return visit" : statusLabel(e.job.status));
+  const countLabel = (n) => `${n} ${n === 1 ? "visit" : "visits"}`;
+
+  const monday = plMonday(anchor);
+  const week = PLANNER_DOW.map((_, i) => plAdd(monday, i));
+  const sunday = week[6];
+  const fmtD = (d, opts) => d.toLocaleDateString("en-GB", opts);
+  const rangeLabel = view === "week"
+    ? `${fmtD(monday, { day: "numeric", month: "short" })} – ${fmtD(sunday, { day: "numeric", month: "short", year: "numeric" })}`
+    : fmtD(anchor, { month: "long", year: "numeric" });
+
+  const shift = (dir) => {
+    if (view === "week") {
+      const next = plAdd(anchor, dir * 7);
+      setAnchor(next);
+      setPickedDay(plKey(plAdd(plMonday(next), (new Date(`${pickedDay}T12:00:00`).getDay() + 6) % 7)));
+    } else {
+      setAnchor(new Date(anchor.getFullYear(), anchor.getMonth() + dir, 1));
+    }
+  };
+  const goToday = () => { setAnchor(new Date()); setPickedDay(plKey(new Date())); };
+  const openWeekOf = (d) => { setAnchor(d); setPickedDay(plKey(d)); setView("week"); };
+
+  const weekVisits = week.flatMap((d) => visitsOn(plKey(d)));
+  const busiest = week.reduce((best, d) => (visitsOn(plKey(d)).length > visitsOn(plKey(best)).length ? d : best), week[0]);
+  const stats = [
+    { label: "Visits this week", value: weekVisits.length, sub: `${weekVisits.filter((e) => CLOSED_STATUSES.includes(e.job.status)).length} completed`, color: C.text },
+    { label: "Return visits", value: weekVisits.filter((e) => e.isReturn).length, sub: "Included in the count", color: C.purple },
+    { label: "Busiest day", value: visitsOn(plKey(busiest)).length ? fmtD(busiest, { weekday: "short", day: "numeric" }) : "—", sub: visitsOn(plKey(busiest)).length ? countLabel(visitsOn(plKey(busiest)).length) : "Nothing booked", color: C.primary },
+    { label: "Needs scheduling", value: unscheduled.length, sub: "Assigned, no visit date yet", color: C.orange },
+  ];
+
+  const offInfo = (d) => {
+    const key = plKey(d);
+    const to = timeOffFor(key);
+    if (to && to.status === "pending") return { label: "Time off (pending)", blocked: false, color: C.warn };
+    if (to) return { label: "Time off", blocked: true, color: C.mid };
+    if (dayOffFor(d)) return { label: "Day off", blocked: true, color: C.mid };
+    return null;
+  };
+  const hatch = "repeating-linear-gradient(135deg, #121212 0 6px, #0b0b0b 6px 12px)";
+
+  const VisitCard = ({ e, compact }) => {
+    const s = styleOf(e);
+    return (
+      <button
+        onClick={() => onOpenJob(e.job)}
+        className="w-full text-left rounded-lg px-2 py-1.5"
+        style={{ background: s.bg, border: `1px solid ${s.t}`, color: C.text }}
+      >
+        <span className="block text-[10px] font-bold uppercase tracking-wide" style={{ color: s.t }}>{labelOf(e)}</span>
+        <span className="block text-xs font-semibold truncate">{e.job.applianceType}{!compact && e.job.brand ? ` · ${e.job.brand}` : ""}</span>
+        <span className="block text-[11px] truncate" style={{ color: C.mid }}>
+          {compact ? `${e.job.postcode}${e.job.bookingRef ? ` · ${e.job.bookingRef}` : ""}` : `${e.job.customerName} · ${e.job.postcode}`}
+        </span>
+      </button>
+    );
+  };
+
+  const navBtn = "h-10 rounded-lg text-sm font-medium flex items-center justify-center";
+  const navStyle = { background: C.card, border: `1px solid ${C.border}`, color: C.text };
+
+  // Month grid: Mondays from the week containing the 1st to the week containing the last day.
+  const first = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
+  const last = new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0);
+  const gridStart = plMonday(first);
+  const cellCount = Math.ceil((Math.round((last - gridStart) / 86400000) + 1) / 7) * 7;
+  const monthCells = Array.from({ length: cellCount }, (_, i) => plAdd(gridStart, i));
+
+  const picked = new Date(`${pickedDay}T12:00:00`);
+  const pickedVisits = visitsOn(pickedDay);
+  const pickedOff = offInfo(picked);
+
+  return (
+    <div>
+      {/* Toolbar */}
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+        <div className="flex items-center gap-2">
+          <button onClick={() => shift(-1)} aria-label="Previous" className={`${navBtn} w-10`} style={navStyle}>‹</button>
+          <button onClick={goToday} className={`${navBtn} px-3`} style={navStyle}>Today</button>
+          <button onClick={() => shift(1)} aria-label="Next" className={`${navBtn} w-10`} style={navStyle}>›</button>
+          <span className="ml-2 font-semibold" style={{ color: C.text }}>{rangeLabel}</span>
+        </div>
+        <div className="flex p-1 rounded-lg" style={{ background: C.card, border: `1px solid ${C.border}` }}>
+          {["week", "month"].map((v) => (
+            <button
+              key={v}
+              onClick={() => setView(v)}
+              className="px-4 py-1.5 rounded-md text-sm font-semibold capitalize"
+              style={{ background: view === v ? C.primary : "transparent", color: view === v ? "#000" : C.mid }}
+            >
+              {v}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Summary */}
+      {view === "week" && (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+          {stats.map((s) => (
+            <div key={s.label} className="rounded-xl p-3" style={{ background: C.card, border: `1px solid ${C.border}` }}>
+              <p className="text-xs" style={{ color: C.mid }}>{s.label}</p>
+              <p className="text-2xl font-semibold" style={{ color: s.color }}>{s.value}</p>
+              <p className="text-xs" style={{ color: C.mid }}>{s.sub}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="flex flex-col lg:flex-row gap-4 items-start">
+        <div className="w-full lg:flex-1 min-w-0">
+          {view === "week" && (
+            <>
+              {/* Phone: day strip + that day's visits, grouped AM / PM */}
+              <div className="md:hidden">
+                <div className="grid grid-cols-7 gap-1.5 mb-4">
+                  {week.map((d, i) => {
+                    const key = plKey(d);
+                    const on = key === pickedDay;
+                    const n = visitsOn(key).length;
+                    const off = offInfo(d);
+                    return (
+                      <button
+                        key={key}
+                        onClick={() => setPickedDay(key)}
+                        aria-label={`${fmtD(d, { weekday: "long", day: "numeric", month: "long" })}, ${off ? off.label : countLabel(n)}`}
+                        className="h-16 rounded-xl flex flex-col items-center justify-center gap-0.5"
+                        style={{ background: on ? C.primary : key === todayKey ? "#141a05" : C.card, color: on ? "#000" : C.text, border: `1px solid ${on ? C.primary : C.border}` }}
+                      >
+                        <span className="text-[11px] opacity-80">{PLANNER_DOW[i]}</span>
+                        <span className="text-base font-semibold">{d.getDate()}</span>
+                        <span className="text-[10px] font-bold">{off && off.blocked ? "–" : n}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="flex items-baseline justify-between mb-3">
+                  <span className="font-semibold" style={{ color: C.text }}>{pickedDay === todayKey ? "Today · " : ""}{fmtD(picked, { weekday: "long", day: "numeric", month: "short" })}</span>
+                  <span className="text-sm" style={{ color: C.mid }}>{pickedOff ? pickedOff.label : countLabel(pickedVisits.length)}</span>
+                </div>
+                {pickedOff && pickedOff.blocked ? (
+                  <div className="rounded-xl p-6 text-center text-sm" style={{ border: `1px dashed ${C.border}`, color: C.mid }}>{pickedOff.label} — nothing booked.</div>
+                ) : (
+                  PLANNER_SLOTS.map((sl) => {
+                    const list = pickedVisits.filter((e) => e.slot === sl.key);
+                    return (
+                      <div key={sl.key} className="mb-4">
+                        <p className="text-sm mb-2"><span className="font-bold" style={{ color: C.text }}>{sl.key}</span> <span style={{ color: C.mid }}>{sl.hours}</span></p>
+                        <div className="space-y-2">
+                          {list.length === 0 && <div className="rounded-lg p-3 text-sm" style={{ border: `1px dashed ${C.border}`, color: C.mid }}>Nothing booked</div>}
+                          {list.map((e) => <VisitCard key={`${e.job.id}-${e.isReturn}`} e={e} />)}
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              {/* Desktop / tablet: days across, AM and PM rows */}
+              <div className="hidden md:block rounded-xl overflow-x-auto" style={{ background: "#0b0b0b", border: `1px solid ${C.border}` }}>
+                <div style={{ minWidth: 820 }}>
+                  <div className="grid" style={{ gridTemplateColumns: "84px repeat(7, minmax(0, 1fr))", borderBottom: `1px solid ${C.border}` }}>
+                    <div />
+                    {week.map((d, i) => {
+                      const key = plKey(d);
+                      const n = visitsOn(key).length;
+                      const off = offInfo(d);
+                      const isT = key === todayKey;
+                      return (
+                        <div key={key} className="p-2.5" style={{ borderLeft: `1px solid #1e1e1e`, background: isT ? "#141a05" : "transparent" }}>
+                          <div className="flex items-baseline gap-1.5">
+                            <span className="text-xs" style={{ color: C.mid }}>{PLANNER_DOW[i]}</span>
+                            <span className="text-lg font-semibold" style={{ color: isT ? C.primary : C.text }}>{d.getDate()}</span>
+                          </div>
+                          <span
+                            className="inline-block mt-1 text-[11px] font-semibold px-2 py-0.5 rounded-full"
+                            style={{ background: n >= 4 ? C.primary : n > 0 ? C.border : "transparent", color: n >= 4 ? "#000" : n > 0 ? C.text : C.mid }}
+                          >
+                            {off && off.blocked && n === 0 ? off.label : n === 0 ? "Free" : countLabel(n)}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {PLANNER_SLOTS.map((sl) => (
+                    <div key={sl.key} className="grid" style={{ gridTemplateColumns: "84px repeat(7, minmax(0, 1fr))", borderBottom: `1px solid ${C.border}` }}>
+                      <div className="p-2.5">
+                        <p className="font-bold" style={{ color: C.text }}>{sl.key}</p>
+                        <p className="text-[11px]" style={{ color: C.mid }}>{sl.hours}</p>
+                      </div>
+                      {week.map((d) => {
+                        const key = plKey(d);
+                        const off = offInfo(d);
+                        const list = visitsOn(key).filter((e) => e.slot === sl.key);
+                        return (
+                          <div key={key} className="p-1.5 space-y-1.5" style={{ minHeight: 140, borderLeft: `1px solid #1e1e1e`, background: off && off.blocked ? hatch : key === todayKey ? "#0e1207" : "transparent" }}>
+                            {off && (off.blocked || sl.key === "AM") && (
+                              <div className="text-[11px] text-center rounded-md px-1.5 py-1" style={{ border: `1px dashed ${off.color === C.warn ? C.warn : "#3a3a3a"}`, color: off.color }}>{off.label}</div>
+                            )}
+                            {list.map((e) => <VisitCard key={`${e.job.id}-${e.isReturn}`} e={e} compact />)}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
+
+          {view === "month" && (
+            <div className="rounded-xl overflow-x-auto" style={{ background: "#0b0b0b", border: `1px solid ${C.border}` }}>
+              <div style={{ minWidth: 640 }}>
+                <div className="grid grid-cols-7" style={{ borderBottom: `1px solid ${C.border}` }}>
+                  {PLANNER_DOW.map((w) => <div key={w} className="px-2.5 py-2 text-xs" style={{ color: C.mid }}>{w}</div>)}
+                </div>
+                <div className="grid grid-cols-7">
+                  {monthCells.map((d) => {
+                    const key = plKey(d);
+                    const list = visitsOn(key);
+                    const am = list.filter((e) => e.slot === "AM").length;
+                    const off = offInfo(d);
+                    const inMonth = d.getMonth() === anchor.getMonth();
+                    const isT = key === todayKey;
+                    return (
+                      <button
+                        key={key}
+                        onClick={() => openWeekOf(d)}
+                        className="text-left p-2 flex flex-col gap-1"
+                        style={{ minHeight: 104, opacity: inMonth ? 1 : 0.35, background: list.length >= 4 ? "#121705" : "transparent", borderRight: "1px solid #1e1e1e", borderBottom: "1px solid #1e1e1e", color: C.text }}
+                      >
+                        <div className="flex items-center justify-between w-full">
+                          <span className="w-6 h-6 rounded-full flex items-center justify-center text-sm font-semibold" style={{ background: isT ? C.primary : "transparent", color: isT ? "#000" : C.text }}>{d.getDate()}</span>
+                          {list.length > 0 && (
+                            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full" style={{ background: list.length >= 4 ? C.primary : C.border, color: list.length >= 4 ? "#000" : C.text }}>{list.length}</span>
+                          )}
+                        </div>
+                        {off && <span className="text-[10px] rounded px-1 py-0.5" style={{ border: `1px dashed ${off.color === C.warn ? C.warn : "#3a3a3a"}`, color: off.color }}>{off.label}</span>}
+                        {list.length > 0 && <span className="text-[11px]" style={{ color: C.mid }}>{am} AM · {list.length - am} PM</span>}
+                        {list.slice(0, 2).map((e) => (
+                          <span key={`${e.job.id}-${e.isReturn}`} className="flex items-center gap-1 text-[11px] w-full overflow-hidden whitespace-nowrap">
+                            <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: styleOf(e).t }} />
+                            <span style={{ color: C.mid }}>{e.slot}</span>
+                            <span className="truncate">{e.job.applianceType}</span>
+                          </span>
+                        ))}
+                        {list.length > 2 && <span className="text-[11px]" style={{ color: C.mid }}>+{list.length - 2} more</span>}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Legend */}
+          <div className="flex flex-wrap gap-x-4 gap-y-1 mt-3 text-xs" style={{ color: C.mid }}>
+            {[["assigned", "Assigned"], ["parts_awaited", "Parts awaited"], ["in_progress", "In progress"], ["completed", "Completed"]].map(([k, l]) => (
+              <span key={k} className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm" style={{ background: STATUS_STYLES[k].bg, border: `1px solid ${STATUS_STYLES[k].t}` }} />{l}</span>
+            ))}
+            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm" style={{ background: RETURN_STYLE.bg, border: `1px solid ${RETURN_STYLE.t}` }} />Return visit</span>
+            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm" style={{ background: "repeating-linear-gradient(135deg, #2a2a2a 0 3px, #111 3px 6px)" }} />Day off / time off</span>
+          </div>
+        </div>
+
+        {/* Needs scheduling */}
+        <div className="w-full lg:w-80 shrink-0 rounded-xl p-4" style={{ background: C.card, border: "1px solid rgba(251,146,60,0.45)" }}>
+          <div className="flex items-center justify-between mb-2">
+            <span className="font-semibold" style={{ color: C.text }}>Needs scheduling</span>
+            <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: C.orange, color: "#000" }}>{unscheduled.length}</span>
+          </div>
+          {unscheduled.length === 0 ? (
+            <p className="text-sm" style={{ color: C.mid }}>All your jobs have a visit booked.</p>
+          ) : (
+            <>
+              <p className="text-sm mb-3" style={{ color: C.mid }}>Contact these customers to arrange a visit, then add the date and AM/PM slot to each booking.</p>
+              <div className="space-y-2">
+                {unscheduled.map((j) => (
+                  <div key={j.id} className="rounded-lg p-2.5 flex items-center justify-between gap-2" style={{ border: `1px dashed ${C.orange}` }}>
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold truncate" style={{ color: C.text }}>{j.applianceType}{j.brand ? ` · ${j.brand}` : ""}</p>
+                      <p className="text-xs truncate" style={{ color: C.mid }}>{j.customerName} · {j.postcode}</p>
+                    </div>
+                    <button onClick={() => onOpenJob(j)} className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold" style={{ background: C.orange, color: "#000" }}>Schedule</button>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
